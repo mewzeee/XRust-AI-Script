@@ -1100,9 +1100,12 @@ local function looksLikeHoop(name)
 	end
 	return false
 end
+-- PERF: this walks every instance in the game, so it must never run inside a
+-- shot — that was the rage lag spike. It's warmed at load and refreshed on a
+-- long timer; hoops don't move.
 local function findHoops()
 	if os.clock() < nextHoopFind and #hoopCache > 0 then return hoopCache end
-	nextHoopFind = os.clock() + 5
+	nextHoopFind = os.clock() + 30
 	local found = {}
 	for _, d in ipairs(Workspace:GetDescendants()) do
 		if (d:IsA("Model") or d:IsA("BasePart")) and looksLikeHoop(d.Name) then
@@ -1132,6 +1135,9 @@ local function nearestHoop(from)
 	return best, bestD
 end
 
+-- warm the hoop cache off the critical path so the first rage shot doesn't hitch
+task.spawn(function() pcall(findHoops) end)
+
 local function ballHeld()
 	local c = LocalPlayer.Character
 	return c and c:FindFirstChild("Basketball") ~= nil
@@ -1145,16 +1151,25 @@ local ShootCat = Library:AddCategory("Shooting", 1)
 --== Auto Green ==--
 local greenPage = ShootCat:AddTab("Auto Green")
 local greenP  = greenPage:AddPanel("Auto Green")
-local greenP2 = greenPage:AddPanel("Settings")
+local greenP2 = greenPage:AddPanel("Rage")
 
--- The game greens a shot when its meter (PlayerGui.Visual.Shooting.Bar) is
--- released at full. Two ways to get there:
---   Snap  - wait until the bar passes `release`, then jump it to full. Fast,
---           but the bar visibly teleports.
---   Ramp  - from the moment the bar starts moving, drive it up ourselves at a
---           steady rate so it *climbs* to full. Looks like a real shot.
-F.Green = { enabled = false, mode = "Ramp", release = 0.9, tween = 0.045, rampTime = 0.18,
-	key = Enum.KeyCode.E, requireBall = true, jitter = 0, sound = false,
+-- HOW THIS WORKS
+-- The game greens a shot when its meter (PlayerGui.Visual.Shooting.Bar) reads
+-- full at release. So there is exactly one job: make the bar read what we want
+-- at the moment you let go.
+--
+-- Do NOT write bar.Size per frame. The game animates that same property, so a
+-- per-frame write fights it (bar visibly jitters up and down) and reading it
+-- back feeds our own output into the next target. That was the old bug. Instead
+-- we wait for the bar to reach the point the game considers a shot, then fire a
+-- SINGLE tween with override=true, which beats the game's own tween cleanly.
+--
+-- Accuracy is one number: shot %.
+--   100  -> always land exactly on green
+--    90  -> 90% of shots green, the rest fall just short (a "great")
+-- Nothing else to tune.
+F.Green = { enabled = false, accuracy = 100, key = Enum.KeyCode.E, requireBall = true,
+	speed = 0.12, sound = false,
 	rage = false, rageMode = "Drop", rageDepth = 3, rageHold = 0.6, rageRadius = 30 }
 
 local function shootingBar()
@@ -1171,33 +1186,14 @@ greenP:AddToggle({ Text = "Enabled", Flag = "green_enabled", Callback = function
 	end
 end })
 greenP:AddToggle({ Text = "Require Basketball", Flag = "green_ball", Callback = function(on) F.Green.requireBall = on end })
-greenP:AddToggle({ Text = "Rage Green", Flag = "green_rage", Callback = function(on)
-	F.Green.rage = on
-	if on then Library:Notify("Rage Green", "Drops you through the floor on release so nobody can contest.", 5, "good") end
-end })
 greenP:AddToggle({ Text = "Green Sound", Flag = "green_sound", Callback = function(on) F.Green.sound = on end })
-
-greenP2:AddDropdown({ Text = "Mode", Flag = "green_mode", Options = { "Ramp", "Snap" }, Default = "Ramp",
-	Callback = function(v) F.Green.mode = v end })
--- The ramp runs from the release point to full. If it's longer than you hold the
--- key for, the shot fires mid-climb and misses — so this is capped short.
-greenP2:AddSlider({ Text = "Ramp Time", Flag = "green_ramp", Min = 0.05, Max = 0.5, Decimals = 2, Default = 0.18,
-	Suffix = "s", Callback = function(v) F.Green.rampTime = v end })
-greenP2:AddSlider({ Text = "Release Point", Flag = "green_release", Min = 0.5, Max = 0.99, Decimals = 2, Default = 0.9,
-	Callback = function(v) F.Green.release = v end })
-greenP2:AddSlider({ Text = "Snap Time", Flag = "green_tween", Min = 0.01, Max = 0.2, Decimals = 3, Default = 0.045,
-	Suffix = "s", Callback = function(v) F.Green.tween = v end })
-greenP2:AddSlider({ Text = "Jitter", Flag = "green_jitter", Min = 0, Max = 0.05, Decimals = 3, Default = 0,
-	Callback = function(v) F.Green.jitter = v end })
-greenP2:AddDropdown({ Text = "Rage Mode", Flag = "green_ragemode", Options = { "Drop", "3PT Teleport" }, Default = "Drop",
-	Callback = function(v) F.Green.rageMode = v end })
-greenP2:AddSlider({ Text = "3PT Radius", Flag = "green_radius", Min = 12, Max = 60, Default = 30,
-	Suffix = "m", Callback = function(v) F.Green.rageRadius = v end })
-greenP2:AddSlider({ Text = "Rage Depth", Flag = "green_depth", Min = 1, Max = 8, Decimals = 1, Default = 3,
-	Suffix = "m", Callback = function(v) F.Green.rageDepth = v end })
-greenP2:AddSlider({ Text = "Rage Hold", Flag = "green_hold", Min = 0.2, Max = 2, Decimals = 2, Default = 0.6,
-	Suffix = "s", Callback = function(v) F.Green.rageHold = v end })
-greenP2:AddDropdown({ Text = "Shoot Key", Flag = "green_key", Options = { "E", "Q", "F", "R", "MouseButton1" },
+-- 100 = every shot green. Lower it and that % of shots land on green; the rest
+-- stop just short of full, which the game scores as a great instead.
+greenP:AddSlider({ Text = "Shot %", Flag = "green_acc", Min = 50, Max = 100, Default = 100,
+	Suffix = "%", Callback = function(v) F.Green.accuracy = v end })
+greenP:AddSlider({ Text = "Release Speed", Flag = "green_speed", Min = 0.02, Max = 0.4, Decimals = 2, Default = 0.12,
+	Suffix = "s", Callback = function(v) F.Green.speed = v end })
+greenP:AddDropdown({ Text = "Shoot Key", Flag = "green_key", Options = { "E", "Q", "F", "R", "MouseButton1" },
 	Default = "E", Callback = function(v)
 		F.Green.key = (v == "MouseButton1") and Enum.UserInputType.MouseButton1 or Enum.KeyCode[v]
 	end })
@@ -1222,16 +1218,12 @@ local function playGreenSound()
 	end)
 end
 
--- Rage Green: sink the character straight down for the duration of the shot.
--- Only a few studs - deep enough that no defender's hitbox reaches you, shallow
--- enough that the game doesn't count it as a void fall and reset you. The
--- HumanoidRootPart is put back exactly where it started.
--- Rage Teleport: instead of sinking, relocate to a spot on the arc around the
--- CURRENT hoop, at `rageRadius` studs, picked to be as far from the nearest
--- defender as possible. The hoop is the anchor rather than the court, because
--- "which court am I on" is really just "which hoop am I shooting at" — that
--- works on every court without knowing the map's layout. Facing is kept toward
--- the hoop so the shot still reads as aimed.
+-- Rage Teleport: relocate to a spot on the arc around the CURRENT hoop, at
+-- rageRadius studs, as far from the nearest defender as possible. The hoop is
+-- the anchor rather than the court, because "which court am I on" is really
+-- "which hoop am I shooting at" — that works on any map without knowing its
+-- layout. Every candidate is raycast-checked for floor first, so it can't drop
+-- you out of bounds or off the edge. Facing stays toward the hoop.
 local function rageTeleport()
 	local myc = getChar()
 	if not myc then return end
@@ -1253,23 +1245,43 @@ local function rageTeleport()
 		end
 	end
 
+	-- Every candidate is raycast straight down. No floor within a few studs of
+	-- our current height = off the court (or over a ledge), so it's discarded.
+	-- This is what stopped it dumping you out of bounds: the old version scored
+	-- purely on distance-from-defender and happily picked a spot in the sea.
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = { myc, lastBall }
+
 	local flat = Vector3.new(1, 0, 1)
 	local best, bestScore = nil, -math.huge
 	for i = 0, 23 do
 		local a = (i / 24) * math.pi * 2
 		local dir = Vector3.new(math.cos(a), 0, math.sin(a))
 		local spot = hoop + dir * F.Green.rageRadius
-		-- keep our feet at roughly our current height (the arc is on the floor)
 		spot = Vector3.new(spot.X, hrp.Position.Y, spot.Z)
-		local score
-		if defender then
-			score = ((spot - defender) * flat).Magnitude          -- as far from them as possible
-		else
-			score = -((spot - hrp.Position) * flat).Magnitude     -- else: move the least
+
+		local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
+		if hit then
+			-- floor must be near our own height: rules out rooftops and pits
+			local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
+			if drop <= 6 then
+				local landed = Vector3.new(spot.X, hit.Position.Y + 3, spot.Z)
+				local score
+				if defender then
+					score = ((landed - defender) * flat).Magnitude       -- as far from them as possible
+				else
+					score = -((landed - hrp.Position) * flat).Magnitude  -- else: move the least
+				end
+				if score > bestScore then best, bestScore = landed, score end
+			end
 		end
-		if score > bestScore then best, bestScore = spot, score end
 	end
-	if not best then return false end
+	if not best then
+		-- no valid on-court spot on this arc — better to do nothing than to
+		-- teleport into the void
+		return false
+	end
 
 	hrp.CFrame = CFrame.new(best, Vector3.new(hoop.X, best.Y, hoop.Z))
 	hrp.AssemblyLinearVelocity = Vector3.zero
@@ -1324,46 +1336,53 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 
 	greenBusy = true
 	task.spawn(function()
-		local dropped, fired = false, false
+		-- Roll accuracy ONCE, up front. Rolling per-frame is what made the old
+		-- jitter wander. 100% = dead green; below that, this shot falls short by
+		-- a small amount, which the game scores as a great rather than a green.
+		local green = (F.Green.accuracy >= 100) or (math.random(1, 100) <= F.Green.accuracy)
+		local target = green and 1 or (0.88 + math.random() * 0.06)
+
+		local raged, fired = false, false
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
 			if bar then
 				local y = bar.Size.Y.Scale
 
-				if F.Green.rage and not dropped and y > 0.15 then
-					dropped = true
+				-- rage fires early in the wind-up, before the release
+				if F.Green.rage and not raged and y > 0.15 then
+					raged = true
 					if F.Green.rageMode == "3PT Teleport" then
-						local ok = pcall(rageTeleport)
-						if not ok then pcall(rageDrop) end
+						local ok, moved = pcall(rageTeleport)
+						-- rageTeleport returns false when it can't find a safe
+						-- on-court spot; don't silently do nothing, drop instead
+						if not ok or moved == false then pcall(rageDrop) end
 					else
 						pcall(rageDrop)
 					end
 				end
 
-				-- Fire ONCE, as a single tween. Do not write bar.Size every frame:
-				-- the game animates the same property, so per-frame writes just
-				-- fight it (bar visibly jitters up and down) and reading the bar
-				-- back feeds our own output into the next target. TweenSize with
-				-- override=true wins against the game's tween cleanly.
-				if not fired and y > F.Green.release then
+				-- Fire ONCE, as a single tween, as late as possible: the closer to
+				-- release, the less time the game has to animate over the top of
+				-- us. Writing bar.Size per frame is what caused the old jitter —
+				-- the game animates the same property, so the two fought, and
+				-- reading it back fed our own output into the next target.
+				-- TweenSize with override=true beats the game's tween cleanly.
+				if not fired and y >= 0.75 then
 					fired = true
-					-- Ramp = a visible climb, Snap = effectively instant. Same
-					-- mechanic, different duration.
-					local dur = (F.Green.mode == "Ramp") and F.Green.rampTime or F.Green.tween
-					-- jitter is rolled ONCE per shot, not per frame
-					local target = 1
-					if F.Green.jitter > 0 then
-						target = math.clamp(1 - math.random() * F.Green.jitter, 0, 1)
-					end
-					local style = (F.Green.mode == "Ramp") and Enum.EasingStyle.Quad or Enum.EasingStyle.Linear
-					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out, style, dur, true)
-					-- pin it afterwards in case the game writes over the tween
-					task.delay(dur + 0.02, function()
-						if bar and bar.Parent and greenKeyDown() then
-							bar.Size = UDim2.new(1, 0, target, 0)
+					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out,
+						Enum.EasingStyle.Quad, F.Green.speed, true)
+					-- hold it there for as long as the key is down, in case the
+					-- game writes over the finished tween
+					task.spawn(function()
+						local deadline = os.clock() + 1.5
+						while greenKeyDown() and os.clock() < deadline and not Library.Destroyed do
+							if bar and bar.Parent and bar.Size.Y.Scale > target then
+								bar.Size = UDim2.new(1, 0, target, 0)
+							end
+							task.wait()
 						end
 					end)
-					playGreenSound()
+					if green then playGreenSound() end
 				end
 			end
 			task.wait()
@@ -1698,9 +1717,13 @@ local guardPage = GuardCat:AddTab("Auto Guard")
 local guardP  = guardPage:AddPanel("Auto Guard")
 local guardP2 = guardPage:AddPanel("Settings")
 
--- Holds you in front of the nearest opponent. Prediction leads their velocity so
--- you arrive where they're going rather than where they were.
-F.Guard = { enabled = false, dist = 5, key = nil, ballOnly = false, predict = 0,
+-- Two ways to stay on your man:
+--   Teleport - snap to the spot in front of them every frame. Perfect, and
+--              obviously not human.
+--   Legs     - actually run there using the Humanoid, so it's your character
+--              moving under its own power. Slower, can be shaken off, looks
+--              like someone with very good footwork.
+F.Guard = { enabled = false, mode = "Legs", dist = 5, ballOnly = false, predict = 0.15,
 	faceTarget = true, smooth = 0, maxRange = 60, target = nil, espTarget = false, hl = nil }
 
 local function playerHasBall(p)
@@ -1728,6 +1751,8 @@ guardP:AddToggle({ Text = "Enabled", Flag = "guard_enabled", Bind = true, BindNo
 	if not on then
 		F.Guard.target = nil
 		if F.Guard.hl then F.Guard.hl.Enabled = false end
+		local h = getHumanoid()
+		if h then h:Move(Vector3.zero, false) end
 	end
 end })
 guardP:AddToggle({ Text = "Ball Carrier Only", Flag = "guard_ballonly", Callback = function(on) F.Guard.ballOnly = on end })
@@ -1737,9 +1762,15 @@ guardP:AddToggle({ Text = "Highlight Target", Flag = "guard_hl", Callback = func
 	if not on and F.Guard.hl then F.Guard.hl.Enabled = false end
 end })
 
+guardP2:AddDropdown({ Text = "Mode", Flag = "guard_mode", Options = { "Legs", "Teleport" }, Default = "Legs",
+	Callback = function(v)
+		F.Guard.mode = v
+		local h = getHumanoid()
+		if h then h:Move(Vector3.zero, false) end
+	end })
 guardP2:AddSlider({ Text = "Distance", Flag = "guard_dist", Min = 2, Max = 12, Decimals = 1, Default = 5,
 	Callback = function(v) F.Guard.dist = v end })
-guardP2:AddSlider({ Text = "Prediction", Flag = "guard_predict", Min = 0, Max = 0.6, Decimals = 2, Default = 0,
+guardP2:AddSlider({ Text = "Prediction", Flag = "guard_predict", Min = 0, Max = 0.6, Decimals = 2, Default = 0.15,
 	Suffix = "x", Callback = function(v) F.Guard.predict = v end })
 guardP2:AddSlider({ Text = "Smoothing", Flag = "guard_smooth", Min = 0, Max = 20, Default = 0,
 	Suffix = "x", Callback = function(v) F.Guard.smooth = v end })
@@ -1777,16 +1808,96 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 		F.Guard.hl.Enabled = false
 	end
 
-	-- lead the target so we land where they're heading
+	-- lead the target so we end up where they're heading, not where they were
 	local lead = tHrp.AssemblyLinearVelocity * F.Guard.predict
 	local goalPos = tHrp.Position + lead + (tHrp.CFrame.LookVector * F.Guard.dist)
-	local goal = F.Guard.faceTarget and CFrame.new(goalPos, tHrp.Position + lead) or CFrame.new(goalPos)
-
 	local hrp = myc.HumanoidRootPart
-	if F.Guard.smooth <= 0 then
-		hrp.CFrame = goal
+
+	if F.Guard.mode == "Legs" then
+		-- Humanoid:Move walks the character there under its own power - real
+		-- pathing, real speed, and it can be beaten. Face separately so we keep
+		-- looking at them while backpedalling.
+		local hum = myc:FindFirstChildOfClass("Humanoid")
+		if hum then
+			local flat = Vector3.new(goalPos.X - hrp.Position.X, 0, goalPos.Z - hrp.Position.Z)
+			if flat.Magnitude > 1.5 then
+				hum:Move(flat.Unit, false)
+			else
+				hum:Move(Vector3.zero, false)
+			end
+			if F.Guard.faceTarget then
+				local look = Vector3.new(tHrp.Position.X, hrp.Position.Y, tHrp.Position.Z)
+				hrp.CFrame = CFrame.new(hrp.Position, look)
+			end
+		end
 	else
-		hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+		local goal = F.Guard.faceTarget and CFrame.new(goalPos, tHrp.Position + lead) or CFrame.new(goalPos)
+		if F.Guard.smooth <= 0 then
+			hrp.CFrame = goal
+		else
+			hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+		end
+	end
+end)
+
+--== Auto Rebound ==--
+local rebPage = GuardCat:AddTab("Auto Rebound")
+local rebP  = rebPage:AddPanel("Auto Rebound")
+local rebP2 = rebPage:AddPanel("Settings")
+
+-- Goes for the loose ball. Only fires when the ball is genuinely loose (nobody
+-- is holding it) and it's within range, so it doesn't yank you across the map
+-- mid-possession.
+F.Reb = { enabled = false, mode = "Legs", range = 60, height = 3, onlyLoose = true, cooldown = 0.4, last = 0 }
+
+local function ballIsLoose()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Character and p.Character:FindFirstChild("Basketball") then return false end
+	end
+	return true
+end
+
+rebP:AddToggle({ Text = "Enabled", Flag = "reb_enabled", Bind = true, BindNoToggle = true, Callback = function(on)
+	F.Reb.enabled = on
+	if not on then
+		local h = getHumanoid()
+		if h then h:Move(Vector3.zero, false) end
+	end
+end })
+rebP:AddToggle({ Text = "Only When Loose", Flag = "reb_loose", Callback = function(on) F.Reb.onlyLoose = on end })
+
+rebP2:AddDropdown({ Text = "Mode", Flag = "reb_mode", Options = { "Legs", "Teleport" }, Default = "Legs",
+	Callback = function(v) F.Reb.mode = v end })
+rebP2:AddSlider({ Text = "Range", Flag = "reb_range", Min = 10, Max = 200, Default = 60,
+	Suffix = "m", Callback = function(v) F.Reb.range = v end })
+rebP2:AddSlider({ Text = "Height Offset", Flag = "reb_height", Min = 0, Max = 10, Decimals = 1, Default = 3,
+	Callback = function(v) F.Reb.height = v end })
+
+Library:StartLoop("rebound", RunService.RenderStepped, function()
+	if not F.Reb.enabled or Library.Destroyed then return end
+	local opt = Library.Options["reb_enabled"]
+	local key = opt and opt.GetKey and opt:GetKey()
+	if key and not isDown(key) then return end
+	if ballHeld() then return end                       -- we already have it
+	if F.Reb.onlyLoose and not ballIsLoose() then return end
+
+	local ball = findBall()
+	local myc = getChar()
+	if not (ball and myc) then return end
+	local hrp = myc.HumanoidRootPart
+	if (ball.Position - hrp.Position).Magnitude > F.Reb.range then return end
+
+	if F.Reb.mode == "Legs" then
+		local hum = myc:FindFirstChildOfClass("Humanoid")
+		if hum then
+			local flat = Vector3.new(ball.Position.X - hrp.Position.X, 0, ball.Position.Z - hrp.Position.Z)
+			if flat.Magnitude > 1 then hum:Move(flat.Unit, false) else hum:Move(Vector3.zero, false) end
+		end
+	else
+		if os.clock() < F.Reb.last then return end
+		F.Reb.last = os.clock() + F.Reb.cooldown
+		hrp.CFrame = CFrame.new(ball.Position - Vector3.new(0, F.Reb.height, 0))
+		hrp.AssemblyLinearVelocity = Vector3.zero
 	end
 end)
 
