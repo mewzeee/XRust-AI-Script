@@ -9,23 +9,26 @@ local result = (function()
     local TweenService = game:GetService("TweenService")
     local UserInputService = game:GetService("UserInputService")
     local Lighting = game:GetService("Lighting")
+    -- Pure-black palette. `surface` is the window body and stays at 0,0,0 so the
+    -- starfield reads properly; `background` (top bar) sits a couple of shades up
+    -- so the bar still separates from the body without a visible seam.
     local Colors = {
-        background = Color3.fromRGB(13, 17, 23),
-        surface = Color3.fromRGB(22, 27, 34),
-        surfaceLight = Color3.fromRGB(30, 36, 44),
+        background = Color3.fromRGB(8, 8, 8),
+        surface = Color3.fromRGB(0, 0, 0),
+        surfaceLight = Color3.fromRGB(16, 16, 16),
         primary = Color3.fromRGB(88, 166, 255),
         primaryDark = Color3.fromRGB(58, 136, 225),
-        primaryGlow = Color3.fromRGB(120, 180, 255),
+        primaryGlow = Color3.fromRGB(160, 200, 255),
         accent = Color3.fromRGB(136, 87, 224),
         success = Color3.fromRGB(47, 183, 117),
         successDark = Color3.fromRGB(37, 153, 97),
         successGlow = Color3.fromRGB(67, 203, 137),
         error = Color3.fromRGB(248, 81, 73),
-        textPrimary = Color3.fromRGB(230, 237, 243),
-        textSecondary = Color3.fromRGB(139, 148, 158),
-        textMuted = Color3.fromRGB(110, 118, 129),
-        border = Color3.fromRGB(48, 54, 61),
-        borderLight = Color3.fromRGB(63, 71, 79),
+        textPrimary = Color3.fromRGB(255, 255, 255),
+        textSecondary = Color3.fromRGB(150, 150, 150),
+        textMuted = Color3.fromRGB(95, 95, 95),
+        border = Color3.fromRGB(34, 34, 34),
+        borderLight = Color3.fromRGB(58, 58, 58),
         glass = Color3.fromRGB(255, 255, 255),
         neonBlue = Color3.fromRGB(0, 229, 255),
         neonPurple = Color3.fromRGB(187, 134, 252)
@@ -136,11 +139,11 @@ local result = (function()
             local viewportSize = workspace.CurrentCamera.ViewportSize
             
             if isMobile then
-                container.Size = UDim2.new(0.6, 0, 0, math.min(320, viewportSize.Y * 0.8))
+                container.Size = UDim2.new(0.75, 0, 0, math.min(430, viewportSize.Y * 0.85))
                 container.Position = UDim2.new(0.5, 0, 0.5, 0)
                 container.AnchorPoint = Vector2.new(0.5, 0.5)
             else
-                container.Size = UDim2.new(0, 580, 0, 320)
+                container.Size = UDim2.new(0, 760, 0, 430)
                 container.Position = UDim2.new(0.5, 0, 0.5, 0)
                 container.AnchorPoint = Vector2.new(0.5, 0.5)
             end
@@ -152,7 +155,7 @@ local result = (function()
             container:SetAttribute("IsMobile", isMobile)
             
             local containerCorner = Instance.new("UICorner")
-            containerCorner.CornerRadius = UDim.new(0, 14)
+            containerCorner.CornerRadius = UDim.new(0, 0)
             containerCorner.Parent = container
             
             local containerStroke = Instance.new("UIStroke")
@@ -173,7 +176,7 @@ local result = (function()
             shadow.Parent = backdrop
             
             local shadowCorner = Instance.new("UICorner")
-            shadowCorner.CornerRadius = UDim.new(0, 18)
+            shadowCorner.CornerRadius = UDim.new(0, 0)
             shadowCorner.Parent = shadow
             
             local glowFrame = Instance.new("Frame")
@@ -188,7 +191,7 @@ local result = (function()
             glowFrame.Parent = backdrop
             
             local glowCorner = Instance.new("UICorner")
-            glowCorner.CornerRadius = UDim.new(0, 30)
+            glowCorner.CornerRadius = UDim.new(0, 0)
             glowCorner.Parent = glowFrame
 
             local glowTween = TweenService:Create(glowFrame,
@@ -208,7 +211,7 @@ local result = (function()
             glassOverlay.Parent = container
             
             local glassCorner = Instance.new("UICorner")
-            glassCorner.CornerRadius = UDim.new(0, 14)
+            glassCorner.CornerRadius = UDim.new(0, 0)
             glassCorner.Parent = glassOverlay
             
             local glassGradient = Instance.new("UIGradient")
@@ -235,7 +238,7 @@ local result = (function()
             topBar.Parent = container
             
             local topBarCorner = Instance.new("UICorner")
-            topBarCorner.CornerRadius = UDim.new(0, 14)
+            topBarCorner.CornerRadius = UDim.new(0, 0)
             topBarCorner.Parent = topBar
 
             local topBarFix = Instance.new("Frame")
@@ -285,7 +288,7 @@ local result = (function()
             closeButton.Parent = topBar
             
             local closeCorner = Instance.new("UICorner")
-            closeCorner.CornerRadius = UDim.new(0, 8)
+            closeCorner.CornerRadius = UDim.new(0, 0)
             closeCorner.Parent = closeButton
 
             local closeIcon = createIconImage("x", 16, Colors.textPrimary)
@@ -319,7 +322,7 @@ local result = (function()
             iconFrame.Parent = titleSection
             
             local iconCorner = Instance.new("UICorner")
-            iconCorner.CornerRadius = UDim.new(0, 12)
+            iconCorner.CornerRadius = UDim.new(0, 0)
             iconCorner.Parent = iconFrame
   
             local iconGradient = Instance.new("UIGradient")
@@ -392,7 +395,7 @@ local result = (function()
             inputSection.Parent = contentArea
             
             local inputCorner = Instance.new("UICorner")
-            inputCorner.CornerRadius = UDim.new(0, 10)
+            inputCorner.CornerRadius = UDim.new(0, 0)
             inputCorner.Parent = inputSection
             
             local inputStroke = Instance.new("UIStroke")
@@ -443,7 +446,7 @@ local result = (function()
             getLinkButton.Parent = buttonSection
 
             local getLinkCorner = Instance.new("UICorner")
-            getLinkCorner.CornerRadius = UDim.new(0, 10)
+            getLinkCorner.CornerRadius = UDim.new(0, 0)
             getLinkCorner.Parent = getLinkButton
 
             local getLinkGradient = Instance.new("UIGradient")
@@ -490,7 +493,7 @@ local result = (function()
             verifyButton.Parent = buttonSection
 
             local verifyCorner = Instance.new("UICorner")
-            verifyCorner.CornerRadius = UDim.new(0, 10)
+            verifyCorner.CornerRadius = UDim.new(0, 0)
             verifyCorner.Parent = verifyButton
 
             local verifyGradient = Instance.new("UIGradient")
@@ -569,41 +572,69 @@ local result = (function()
                 glowFrame = glowFrame
             }
             
-            local function createAmbientParticle()
-                local particle = Instance.new("Frame")
-                particle.Name = "AmbientParticle"
-                particle.Size = UDim2.new(0, math.random(2, 4), 0, math.random(2, 4))
-                particle.Position = UDim2.new(math.random(), 0, 1, 0)
-                particle.BackgroundColor3 = Colors.primaryGlow
-                particle.BackgroundTransparency = 0.7
-                particle.BorderSizePixel = 0
-                particle.Parent = container
-                
-                local particleCorner = Instance.new("UICorner")
-                particleCorner.CornerRadius = UDim.new(1, 0)
-                particleCorner.Parent = particle
-                
-                local floatTween = TweenService:Create(particle,
-                    TweenInfo.new(math.random(8, 12), Enum.EasingStyle.Linear),
-                    {
-                        Position = UDim2.new(particle.Position.X.Scale, 0, -0.1, 0),
-                        BackgroundTransparency = 1
-                    }
-                )
-                floatTween:Play()
-                
-                floatTween.Completed:Connect(function()
-                    particle:Destroy()
-                end)
+            -- ── STARFIELD ────────────────────────────────────────────────
+            --  A persistent, clipped star layer behind the content (ZIndex 0,
+            --  so it sits under everything at the default ZIndex 1). Each star
+            --  drifts slowly upward and twinkles on its own sine phase, then
+            --  wraps to the bottom at a new X. The RenderStepped loop cleans
+            --  itself up when the window is destroyed.
+            local RunService = game:GetService("RunService")
+
+            local starField = Instance.new("Frame")
+            starField.Name = "StarField"
+            starField.Size = UDim2.new(1, 0, 1, -45)
+            starField.Position = UDim2.new(0, 0, 0, 45)
+            starField.BackgroundTransparency = 1
+            starField.BorderSizePixel = 0
+            starField.ClipsDescendants = true
+            starField.ZIndex = 0
+            starField.Parent = container
+
+            local stars = {}
+            for _ = 1, 110 do
+                local px = math.random(1, 3)
+                local star = Instance.new("Frame")
+                star.Name = "Star"
+                star.Size = UDim2.fromOffset(px, px)
+                star.BackgroundColor3 = (math.random() < 0.15) and Colors.primaryGlow or Color3.fromRGB(255, 255, 255)
+                star.BorderSizePixel = 0
+                star.ZIndex = 0
+                star.Parent = starField
+
+                local sc = Instance.new("UICorner")
+                sc.CornerRadius = UDim.new(1, 0)
+                sc.Parent = star
+
+                table.insert(stars, {
+                    gui = star,
+                    x = math.random(),
+                    y = math.random(),
+                    drift = math.random(6, 26) / 1000,   -- scale units per second
+                    phase = math.random() * 6.283,
+                    speed = math.random(6, 22) / 10,     -- twinkle rate
+                    base = math.random(25, 70) / 100,    -- resting transparency
+                })
             end
-            
-            task.spawn(function()
-                while container and container.Parent do
-                    createAmbientParticle()
-                    task.wait(math.random(2, 4))
+
+            local starConn
+            starConn = RunService.RenderStepped:Connect(function(dt)
+                if not starField.Parent then
+                    starConn:Disconnect()
+                    return
+                end
+                local vp = starField.AbsoluteSize
+                for _, s in ipairs(stars) do
+                    s.phase = s.phase + dt * s.speed
+                    s.y = s.y - s.drift * dt
+                    if s.y < -0.05 then
+                        s.y = 1.05
+                        s.x = math.random()
+                    end
+                    s.gui.Position = UDim2.fromOffset(s.x * vp.X, s.y * vp.Y)
+                    s.gui.BackgroundTransparency = math.clamp(s.base + math.sin(s.phase) * 0.35, 0, 1)
                 end
             end)
-            
+
             local getLinkStroke = getLinkButton:FindFirstChild("UIStroke")
             if getLinkStroke then
                 getLinkStroke.Name = "GetLinkButtonGlow"
@@ -1246,7 +1277,7 @@ local result = (function()
                 toast.Parent = self.gui
                 
                 local corner = Instance.new("UICorner")
-                corner.CornerRadius = UDim.new(0, 10)
+                corner.CornerRadius = UDim.new(0, 0)
                 corner.Parent = toast
                 
                 local shadow = Instance.new("ImageLabel")
