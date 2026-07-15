@@ -92,6 +92,15 @@ local VERIFY_ERRORS = {
 	SERVICE_MISMATCH = "That key is not for xRust.",
 	KEY_USED         = "That key has already been used.",
 	HWID_LIMIT       = "That key has hit its device limit.",
+	-- a key deleted or revoked in the dashboard (Key.is_invalidated in the REST
+	-- schema). The exact wire code isn't documented, so the likely spellings are
+	-- all mapped to the same message.
+	KEY_DELETED      = "That key no longer exists — it was deleted.",
+	KEY_NOT_FOUND    = "That key no longer exists — it was deleted.",
+	KEY_INVALIDATED  = "That key was revoked.",
+	KEY_REVOKED      = "That key was revoked.",
+	KEY_DISABLED     = "That key was disabled.",
+	SERVICE_NOT_FOUND = "Service not found — the hub is misconfigured.",
 }
 -- Turns a failed verify into something a user can act on. A HWID ban can carry a
 -- staff-written reason; the field it arrives on isn't documented, so several
@@ -124,34 +133,95 @@ local function isoToUnix(s)
 	return t + offset
 end
 
--- Real expiry for the key the key system verified, in unix seconds.
--- nil = no expiry found (rendered as "lifetime").
+-- Real expiry for the verified key.
+--   returns: unix seconds        -> a real expiry
+--            "lifetime"          -> the backend set JD_EXPIRES_AT = 0/false
+--            nil                 -> unknown (never claim "lifetime" on a guess)
 --
--- The key window stashes /verifyOpen's raw payload in getgenv().XRUST_KEY_INFO.
--- That endpoint's success shape isn't documented, so every plausible field name
--- is tried: an absolute timestamp first, then a relative "minutes remaining".
--- (The REST API exposes expires_at/validity_minutes properly, but it needs an
--- admin bearer token that must never ship inside a client script.)
-local function keyExpiry()
-	local info = rawget(getgenv(), "XRUST_KEY_INFO")
-	if type(info) ~= "table" then return nil end
-	local data = (type(info.key) == "table" and info.key) or (type(info.data) == "table" and info.data) or info
+-- Two sources, best first:
+--  1. JD_EXPIRES_AT — the backend's documented runtime global (a unix
+--     timestamp). Not present in every flow, so it's tried and not relied on.
+--  2. /verifyOpen's raw payload, stashed by the key window in XRUST_KEY_INFO.
+--     That endpoint's success shape is undocumented, so plausible field names
+--     are searched: absolute timestamp first, then relative minutes, including
+--     one level of nesting.
+-- (The REST API exposes expires_at/validity_minutes properly, but needs an admin
+-- bearer token that must never ship inside a client script.)
+local ABS_KEYS = { "expires_at", "expiresAt", "expiry", "expires", "valid_until", "validUntil",
+	"expire_at", "expiration", "expiresOn", "expires_on" }
+local REL_KEYS = { "validity_minutes", "validityMinutes", "minutes_left", "minutesLeft",
+	"time_left", "timeLeft", "remaining_minutes", "duration_minutes", "seconds_left" }
 
-	for _, k in ipairs({ "expires_at", "expiresAt", "expiry", "expires", "valid_until", "validUntil" }) do
-		local v = data[k]
-		if type(v) == "number" and v > 0 then return v end
-		if type(v) == "string" then
-			local n = tonumber(v)
-			if n and n > 100000000 then return n end     -- unix seconds as a string
-			local iso = isoToUnix(v)
-			if iso then return iso end
-		end
+local function asUnix(v)
+	if type(v) == "number" then
+		if v > 100000000000 then return math.floor(v / 1000) end   -- ms -> s
+		if v > 100000000 then return v end                          -- already unix s
+		return nil
 	end
-	for _, k in ipairs({ "validity_minutes", "validityMinutes", "minutes_left", "minutesLeft", "time_left" }) do
-		local v = tonumber(data[k])
-		if v and v > 0 then return os.time() + v * 60 end
+	if type(v) == "string" then
+		local n = tonumber(v)
+		if n then return asUnix(n) end
+		return isoToUnix(v)
 	end
 	return nil
+end
+
+local function scanExpiry(t, depth)
+	if type(t) ~= "table" or depth > 2 then return nil end
+	for _, k in ipairs(ABS_KEYS) do
+		local u = asUnix(t[k])
+		if u then return u end
+	end
+	for _, k in ipairs(REL_KEYS) do
+		local v = tonumber(t[k])
+		if v and v > 0 then
+			return os.time() + (k == "seconds_left" and v or v * 60)
+		end
+	end
+	for _, v in pairs(t) do
+		if type(v) == "table" then
+			local found = scanExpiry(v, depth + 1)
+			if found then return found end
+		end
+	end
+	return nil
+end
+
+local function keyExpiry()
+	local g = getgenv()
+
+	local jd = rawget(g, "JD_EXPIRES_AT")
+	if jd ~= nil then
+		local u = asUnix(jd)
+		if u then return u end
+		if jd == 0 or jd == false then return "lifetime" end
+	end
+
+	return scanExpiry(rawget(g, "XRUST_KEY_INFO"), 0)
+end
+
+-- Prints every field of the verify payload once, so any expiry field this build
+-- doesn't know about is visible in the console rather than silently ignored.
+local function dumpKeyPayload()
+	local info = rawget(getgenv(), "XRUST_KEY_INFO")
+	if type(info) ~= "table" then
+		warn("[XRust] no XRUST_KEY_INFO — hub run outside the key flow, or the key window is an older build.")
+		return
+	end
+	local parts = {}
+	for k, v in pairs(info) do
+		local val = tostring(v)
+		if type(v) == "table" then
+			local sub = {}
+			for k2, v2 in pairs(v) do table.insert(sub, tostring(k2) .. "=" .. tostring(v2)) end
+			table.sort(sub)
+			val = "{" .. table.concat(sub, ", ") .. "}"
+		end
+		table.insert(parts, tostring(k) .. " = " .. val .. "  <" .. typeof(v) .. ">")
+	end
+	table.sort(parts)
+	warn("[XRust] verify payload fields:\n  " .. table.concat(parts, "\n  "))
+	warn("[XRust] JD_EXPIRES_AT = " .. tostring(rawget(getgenv(), "JD_EXPIRES_AT")))
 end
 
 --// ------------------------------------------------------------------
@@ -619,24 +689,31 @@ closeBtn.MouseButton1Click:Connect(function()
 end)
 
 --// ------------------------------------------------------------------
---// LOGIN -> HUB
+--// ACCOUNT PANEL
 --// ------------------------------------------------------------------
+-- exp: unix seconds | "lifetime" | nil (unknown)
+-- nil must NOT render as "lifetime" — a 2h key would read as permanent. Say
+-- "unknown" and be honest about it.
 local function fmtExpiry(exp)
-	if not exp then return "lifetime" end
+	if exp == "lifetime" then return "lifetime" end
+	if not exp then return "unknown" end
 	local left = exp - os.time()
 	if left <= 0 then return "expired" end
 	local dateStr = os.date("!%d %b %Y", exp)
 	local days = math.floor(left / 86400)
 	if days >= 1 then return dateStr .. "  (" .. days .. "d left)" end
 	local hrs = math.floor(left / 3600)
-	return dateStr .. "  (" .. hrs .. "h left)"
+	if hrs >= 1 then return dateStr .. "  (" .. hrs .. "h left)" end
+	return dateStr .. "  (" .. math.max(1, math.floor(left / 60)) .. "m left)"
 end
 
 -- assigns the forward-declared refreshAccount: sync every account label + greeting
 refreshAccount = function()
 	local expText = fmtExpiry(keyExpiry())
 	expiryLbl.Text = "Expires: " .. expText
-	expiryLbl.TextColor3 = (expText == "expired") and Theme.Bad or Theme.TextHdr   -- white
+	expiryLbl.TextColor3 = (expText == "expired") and Theme.Bad
+		or (expText == "unknown") and Theme.TextOff
+		or Theme.TextHdr
 	if homeVals.user then homeVals.user.Text = greetName() end   -- display name or "User", never the key
 	if homeVals.expiry then homeVals.expiry.Text = expText end
 	if homeVals.hwid then homeVals.hwid.Text = Account.hwid end
@@ -655,3 +732,4 @@ do
 end
 if refreshAccount then pcall(refreshAccount) end
 warn("[XRust] hub loaded (UNKIE key mode — no in-script login).")
+pcall(dumpKeyPayload)

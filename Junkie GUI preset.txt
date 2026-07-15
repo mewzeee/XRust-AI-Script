@@ -89,6 +89,15 @@ local result = (function()
         SERVICE_MISMATCH = "This key is not for xRust",
         KEY_USED         = "This key has already been used",
         HWID_LIMIT       = "This key has hit its device limit",
+        -- a key deleted or revoked in the dashboard (Key.is_invalidated in the
+        -- REST schema). The wire code isn't documented, so the likely spellings
+        -- all map to the same message.
+        KEY_DELETED       = "This key no longer exists - it was deleted",
+        KEY_NOT_FOUND     = "This key no longer exists - it was deleted",
+        KEY_INVALIDATED   = "This key was revoked",
+        KEY_REVOKED       = "This key was revoked",
+        KEY_DISABLED      = "This key was disabled",
+        SERVICE_NOT_FOUND = "Service not found - misconfigured",
     }
 
     -- Turns a failed verify into something a human can act on. A HWID ban can
