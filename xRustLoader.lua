@@ -73,170 +73,24 @@ end
 --// ACCOUNT
 --//   UNKIE verifies the key before this file runs, so there is no login
 --//   and no auth call left in here. This table only carries the HWID for
---//   the account panel. The real expiry comes from the key system's verify
---//   payload — see keyExpiry() below.
+--//   the account panel.
 --// ------------------------------------------------------------------
 local Account = {
 	hwid = getHWID(),
 }
 
--- /verifyOpen failure codes. KEY_EXPIRED / HWID_BANNED / SERVICE_MISMATCH /
--- HWID_MISMATCH are documented (roblox-sdk/external-loader); KEY_INVALID is what
--- the live endpoint returns for a bad key. The code lands on .error or .message
--- depending on the branch, so both are checked.
-local VERIFY_ERRORS = {
-	KEY_INVALID      = "Invalid key — check for typos, or claim a new one.",
-	KEY_EXPIRED      = "That key has expired — claim a new one.",
-	HWID_BANNED      = "This HWID is banned.",
-	HWID_MISMATCH    = "That key is bound to another HWID.",
-	SERVICE_MISMATCH = "That key is not for xRust.",
-	KEY_USED         = "That key has already been used.",
-	HWID_LIMIT       = "That key has hit its HWID limit.",
-	-- a key deleted or revoked in the dashboard (Key.is_invalidated in the REST
-	-- schema). The exact wire code isn't documented, so the likely spellings are
-	-- all mapped to the same message.
-	KEY_DELETED      = "That key no longer exists — it was deleted.",
-	KEY_NOT_FOUND    = "That key no longer exists — it was deleted.",
-	KEY_INVALIDATED  = "That key was revoked.",
-	KEY_REVOKED      = "That key was revoked.",
-	KEY_DISABLED     = "That key was disabled.",
-	SERVICE_NOT_FOUND = "Service not found — the hub is misconfigured.",
-}
--- Turns a failed verify into something a user can act on. A HWID ban can carry a
--- staff-written reason; the field it arrives on isn't documented, so several
--- likely names are checked and appended when present.
-local function verifyErrorText(res)
-	if type(res) ~= "table" then return "Could not reach the key server." end
-	local code = tostring(res.error or res.message or "")
-	local text = VERIFY_ERRORS[code:upper()] or ((code ~= "" and code) or "Verification failed.")
-	for _, k in ipairs({ "reason", "ban_reason", "banReason", "details", "detail" }) do
-		local r = res[k]
-		if type(r) == "string" and r ~= "" and r:upper() ~= code:upper() then
-			return text .. " Reason: " .. r
-		end
-	end
-	return text
-end
-
--- ISO-8601 ("2026-07-17T09:30:00.000Z") -> unix seconds. Luau has no strptime,
--- so pull the fields out by hand. os.time() reads a table as LOCAL time, so the
--- UTC offset is measured and added back on.
-local function isoToUnix(s)
-	if type(s) ~= "string" then return nil end
-	local y, mo, d, h, mi, sec = s:match("^(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
-	if not y then return nil end
-	local ok, t = pcall(os.time, { year = tonumber(y), month = tonumber(mo), day = tonumber(d),
-		hour = tonumber(h), min = tonumber(mi), sec = tonumber(sec) })
-	if not ok or not t then return nil end
-	local now = os.time()
-	local offset = os.difftime(now, os.time(os.date("!*t", now)))
-	return t + offset
-end
-
--- Real expiry for the verified key.
---   returns: unix seconds        -> a real expiry
---            "lifetime"          -> the backend set JD_EXPIRES_AT = 0/false
---            nil                 -> unknown (never claim "lifetime" on a guess)
---
--- Two sources, best first:
---  1. JD_EXPIRES_AT — the backend's documented runtime global (a unix
---     timestamp). Not present in every flow, so it's tried and not relied on.
---  2. /verifyOpen's raw payload, stashed by the key window in XRUST_KEY_INFO.
---     That endpoint's success shape is undocumented, so plausible field names
---     are searched: absolute timestamp first, then relative minutes, including
---     one level of nesting.
--- (The REST API exposes expires_at/validity_minutes properly, but needs an admin
--- bearer token that must never ship inside a client script.)
-local ABS_KEYS = { "expires_at", "expiresAt", "expiry", "expires", "valid_until", "validUntil",
-	"expire_at", "expiration", "expiresOn", "expires_on" }
-local REL_KEYS = { "validity_minutes", "validityMinutes", "minutes_left", "minutesLeft",
-	"time_left", "timeLeft", "remaining_minutes", "duration_minutes", "seconds_left" }
-
-local function asUnix(v)
-	if type(v) == "number" then
-		if v > 100000000000 then return math.floor(v / 1000) end   -- ms -> s
-		if v > 100000000 then return v end                          -- already unix s
-		return nil
-	end
-	if type(v) == "string" then
-		local n = tonumber(v)
-		if n then return asUnix(n) end
-		return isoToUnix(v)
-	end
+-- The open verify endpoint returns ONLY { valid, is_keyless, is_premium,
+-- message } - there is no expiry in it, and the JD_* runtime globals are nil in
+-- this flow. The real expiry lives on the REST /keys endpoint, which needs an
+-- admin bearer token that must never ship inside a client script. So the plan is
+-- the only key fact that can honestly be shown here.
+local function keyPlan()
+	local info = rawget(getgenv(), "XRUST_KEY_INFO")
+	if type(info) ~= "table" then return nil end
+	if info.is_premium == true then return "Premium" end
+	if info.is_keyless == true then return "Keyless" end
+	if info.valid == true then return "Standard" end
 	return nil
-end
-
-local function scanExpiry(t, depth)
-	if type(t) ~= "table" or depth > 2 then return nil end
-	for _, k in ipairs(ABS_KEYS) do
-		local u = asUnix(t[k])
-		if u then return u end
-	end
-	for _, k in ipairs(REL_KEYS) do
-		local v = tonumber(t[k])
-		if v and v > 0 then
-			return os.time() + (k == "seconds_left" and v or v * 60)
-		end
-	end
-	for _, v in pairs(t) do
-		if type(v) == "table" then
-			local found = scanExpiry(v, depth + 1)
-			if found then return found end
-		end
-	end
-	return nil
-end
-
-local function keyExpiry()
-	local g = getgenv()
-
-	local jd = rawget(g, "JD_EXPIRES_AT")
-	if jd ~= nil then
-		local u = asUnix(jd)
-		if u then return u end
-		if jd == 0 or jd == false then return "lifetime" end
-	end
-
-	return scanExpiry(rawget(g, "XRUST_KEY_INFO"), 0)
-end
-
--- Every field of the verify payload as text. Shown in Settings > Key Debug and
--- logged on boot, so an expiry field this build doesn't know about is visible
--- rather than silently ignored. Temporary: delete once the expiry is wired to
--- the real field name.
-local function payloadSummary()
-	local g = getgenv()
-	local lines = {}
-	for _, name in ipairs({ "JD_EXPIRES_AT", "JD_IS_PREMIUM", "JD_CREATED_AT", "JD_REASON" }) do
-		table.insert(lines, name .. " = " .. tostring(rawget(g, name)))
-	end
-
-	local info = rawget(g, "XRUST_KEY_INFO")
-	if type(info) ~= "table" then
-		table.insert(lines, "XRUST_KEY_INFO = " .. tostring(info))
-		table.insert(lines, "(hub run outside the key flow, or the key window is an older build)")
-		return table.concat(lines, "\n")
-	end
-
-	local fields = {}
-	for k, v in pairs(info) do
-		local val = tostring(v)
-		if type(v) == "table" then
-			local sub = {}
-			for k2, v2 in pairs(v) do table.insert(sub, tostring(k2) .. "=" .. tostring(v2)) end
-			table.sort(sub)
-			val = "{" .. table.concat(sub, ", ") .. "}"
-		end
-		table.insert(fields, tostring(k) .. " = " .. val .. "  <" .. typeof(v) .. ">")
-	end
-	table.sort(fields)
-	table.insert(lines, "--- verify payload ---")
-	for _, f in ipairs(fields) do table.insert(lines, f) end
-	return table.concat(lines, "\n")
-end
-
-local function dumpKeyPayload()
-	warn("[XRust] key debug:\n" .. payloadSummary())
 end
 
 --// ------------------------------------------------------------------
@@ -403,9 +257,9 @@ local BottomBar = create("Frame", { Parent = Hub, Position = UDim2.new(0, 0, 1, 
 	BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 13 })
 create("Frame", { Parent = BottomBar, Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = STROKE, BorderSizePixel = 0, ZIndex = 14 })
 label(BottomBar, "  " .. LocalPlayer.Name, { Color = Theme.TextOn, Size = 12, Sz = UDim2.new(0.5, 0, 1, 0), Pos = UDim2.new(0, 10, 0, 0) }).ZIndex = 14
-local expiryLbl = label(BottomBar, "Expires: --", { Color = Theme.TextHdr, Size = 12, XAlign = Enum.TextXAlignment.Right,
+local planLbl = label(BottomBar, "", { Color = Theme.TextHdr, Size = 12, XAlign = Enum.TextXAlignment.Right,
 	Sz = UDim2.new(0.5, -14, 1, 0), Pos = UDim2.new(0.5, 0, 0, 0) })
-expiryLbl.ZIndex = 14
+planLbl.ZIndex = 14
 
 -- tab system ---------------------------------------------------------
 -- NOTE: Roblox Instances reject arbitrary Lua fields (btn.underline = x throws
@@ -477,7 +331,7 @@ do
 		return val
 	end
 	homeVals.user   = infoRow(1, "Name")       -- their display name (or "User"), never the licence key
-	homeVals.expiry = infoRow(2, "Expires")
+	homeVals.plan   = infoRow(2, "Plan")       -- is_premium is the only key fact the open API exposes
 	homeVals.hwid   = infoRow(3, "HWID")       -- shown so users can quote it when asking for a reset
 	homeVals.hwid.Text = Account.hwid
 	homeVals.hwid.TextTruncate = Enum.TextTruncate.AtEnd
@@ -616,55 +470,8 @@ do
 		return box
 	end
 
-	-- License card: claim a key onto THIS machine's HWID.
-	-- Verifying is what binds a key to a HWID (the key system records it as
-	-- bound_by="verify"), so claiming is just a re-verify with the new key. How
-	-- many machines one key may cover is the provider's hwid_limit, enforced
-	-- server-side — this card only reports what comes back.
-	local licCard = card(setPage, "License", { Sz = UDim2.new(1, 0, 0, 150) })
-	label(licCard, "Claim a different key on this HWID. Claiming replaces the key this session is using and re-binds it to this machine.", {
-		Color = Theme.TextOff, Size = 12, Wrap = true, YAlign = Enum.TextYAlignment.Top,
-		Sz = UDim2.new(1, -28, 0, 32), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 14
-	local licStatus
-	fieldRow(licCard, 74, "Input License", "Claim", function(box, btn)
-		local key = box.Text:gsub("^%s+", ""):gsub("%s+$", "")
-		if key == "" then
-			licStatus.Text = "Enter a key first."; licStatus.TextColor3 = Theme.Bad; return
-		end
-		local J = rawget(getgenv(), "XRUST_JUNKIE")
-		if type(J) ~= "table" or type(J.check_key) ~= "function" then
-			licStatus.Text = "Key system unavailable — hub was run outside the key flow."
-			licStatus.TextColor3 = Theme.Bad; return
-		end
-		btn.Text = "..."; licStatus.Text = "Verifying..."; licStatus.TextColor3 = Theme.TextOff
-		task.spawn(function()
-			local ok, res = pcall(function() return J.check_key(key) end)
-			btn.Text = "Claim"
-			if not ok then
-				licStatus.Text = "Error: " .. tostring(res); licStatus.TextColor3 = Theme.Bad; return
-			end
-			if res and res.valid then
-				getgenv().XRUST_KEY = key
-				getgenv().XRUST_KEY_INFO = res
-				getgenv().SCRIPT_KEY = key
-				-- same file the key window reads on next launch
-				pcall(function()
-					if typeof(writefile) == "function" then writefile("verified_key.txt", key) end
-				end)
-				refreshAccount()
-				licStatus.Text = "Claimed — bound to this HWID."; licStatus.TextColor3 = Theme.Good
-			else
-				pcall(function() warn("[XRust] claim failed:", HttpService:JSONEncode(res or {})) end)
-				licStatus.Text = verifyErrorText(res); licStatus.TextColor3 = Theme.Bad
-			end
-		end)
-	end)
-	licStatus = label(licCard, "", { Color = Theme.TextOff, Size = 12, Wrap = true,
-		Sz = UDim2.new(1, -28, 0, 24), Pos = UDim2.new(0, 14, 0, 118) })
-	licStatus.ZIndex = 14
-
 	-- Profile card: change the greeting name
-	local proCard = card(setPage, "Profile", { Sz = UDim2.new(1, 0, 0, 122), Pos = UDim2.new(0, 0, 0, 160) })
+	local proCard = card(setPage, "Profile", { Sz = UDim2.new(1, 0, 0, 122), Pos = UDim2.new(0, 0, 0, 0) })
 	label(proCard, "Set a display name — Home greets you with it instead of the default.", {
 		Color = Theme.TextOff, Size = 12, Wrap = true, YAlign = Enum.TextYAlignment.Top,
 		Sz = UDim2.new(1, -28, 0, 30), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 14
@@ -679,19 +486,6 @@ do
 	nameBox.Text = Profile.displayName or ""
 	proStatus = label(proCard, "", { Color = Theme.TextOff, Size = 13, Sz = UDim2.new(1, -28, 0, 18), Pos = UDim2.new(0, 14, 0, 106) })
 	proStatus.ZIndex = 14
-
-	-- Key Debug card: dumps the raw verify payload so the real expiry field can
-	-- be identified. TEMPORARY — remove once "Expires" reads the right field.
-	local dbgCard = card(setPage, "Key Debug", { Sz = UDim2.new(1, 0, 1, -292), Pos = UDim2.new(0, 0, 0, 292) })
-	local dbgScroll = create("ScrollingFrame", { Parent = dbgCard, BackgroundTransparency = 1, BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
-		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
-	pad(dbgScroll, 14, 4, 12, 8)
-	local dbgLbl = label(dbgScroll, payloadSummary(), { Color = Theme.TextOff, Size = 11.5, Wrap = true,
-		YAlign = Enum.TextYAlignment.Top, Sz = UDim2.new(1, 0, 0, 0), Pos = UDim2.new(0, 0, 0, 0) })
-	dbgLbl.AutomaticSize = Enum.AutomaticSize.Y
-	dbgLbl.ZIndex = 12
-	dbgLbl.TextXAlignment = Enum.TextXAlignment.Left
 end
 
 selectTab("Home")
@@ -719,31 +513,12 @@ end)
 --// ------------------------------------------------------------------
 --// ACCOUNT PANEL
 --// ------------------------------------------------------------------
--- exp: unix seconds | "lifetime" | nil (unknown)
--- nil must NOT render as "lifetime" — a 2h key would read as permanent. Say
--- "unknown" and be honest about it.
-local function fmtExpiry(exp)
-	if exp == "lifetime" then return "lifetime" end
-	if not exp then return "unknown" end
-	local left = exp - os.time()
-	if left <= 0 then return "expired" end
-	local dateStr = os.date("!%d %b %Y", exp)
-	local days = math.floor(left / 86400)
-	if days >= 1 then return dateStr .. "  (" .. days .. "d left)" end
-	local hrs = math.floor(left / 3600)
-	if hrs >= 1 then return dateStr .. "  (" .. hrs .. "h left)" end
-	return dateStr .. "  (" .. math.max(1, math.floor(left / 60)) .. "m left)"
-end
-
 -- assigns the forward-declared refreshAccount: sync every account label + greeting
 refreshAccount = function()
-	local expText = fmtExpiry(keyExpiry())
-	expiryLbl.Text = "Expires: " .. expText
-	expiryLbl.TextColor3 = (expText == "expired") and Theme.Bad
-		or (expText == "unknown") and Theme.TextOff
-		or Theme.TextHdr
+	local plan = keyPlan()
+	planLbl.Text = plan and (plan .. " key") or ""
 	if homeVals.user then homeVals.user.Text = greetName() end   -- display name or "User", never the key
-	if homeVals.expiry then homeVals.expiry.Text = expText end
+	if homeVals.plan then homeVals.plan.Text = plan or "--" end
 	if homeVals.hwid then homeVals.hwid.Text = Account.hwid end
 	updateGreeting()
 end
@@ -760,4 +535,3 @@ do
 end
 if refreshAccount then pcall(refreshAccount) end
 warn("[XRust] hub loaded (UNKIE key mode — no in-script login).")
-pcall(dumpKeyPayload)
