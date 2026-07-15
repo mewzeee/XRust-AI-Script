@@ -1048,8 +1048,9 @@ local aimP2   = aimPage:AddPanel("Settings")
 
 -- fov = the EFFECTIVE fov every aim feature + the circle read; fovBase = what
 -- the slider sets. Dynamic FOV scales fov = fovBase * dynScale while ADS.
+-- No autoShoot/fireRate here: firing on lock is what the Rage tab is for.
 F.Aim = { enabled = false, fov = 120, fovBase = 120, smooth = 3, part = "Head", prediction = 0, priority = "Crosshair",
-	teamCheck = false, wallCheck = false, sticky = false, autoShoot = false, fireRate = 0.1, target = nil,
+	teamCheck = false, wallCheck = false, sticky = false, target = nil,
 	hlTarget = false, targetColor = COLORS.Red, lockedChar = nil }
 
 -- the bind chip on Enabled IS the hold aim-key (BindNoToggle keeps it from toggling the feature)
@@ -1058,7 +1059,6 @@ aimP:AddToggle({ Text = "Enabled", Flag = "aim_enabled", Bind = true, BindNoTogg
 aimP:AddToggle({ Text = "Team Check", Flag = "aim_team", Callback = function(on) F.Aim.teamCheck = on end })
 aimP:AddToggle({ Text = "Visible Check", Flag = "aim_wall", Callback = function(on) F.Aim.wallCheck = on end })
 aimP:AddToggle({ Text = "Sticky Target", Flag = "aim_sticky", Callback = function(on) F.Aim.sticky = on end })
-aimP:AddToggle({ Text = "Auto Shoot", Flag = "aim_autoshoot", Callback = function(on) F.Aim.autoShoot = on end })
 aimP:AddToggle({ Text = "Highlight Target", Flag = "aim_hltarget", Callback = function(on) F.Aim.hlTarget = on end })
 
 aimP2:AddDropdown({ Text = "Target Part", Flag = "aim_part", Options = { "Closest", "Head", "Torso", "Random" },
@@ -1069,8 +1069,6 @@ aimP2:AddSlider({ Text = "Smoothing", Flag = "aim_smooth", Min = 1, Max = 20, De
 	Suffix = "x", Callback = function(v) F.Aim.smooth = v end })
 aimP2:AddSlider({ Text = "Prediction", Flag = "aim_pred", Min = 0, Max = 1, Decimals = 2, Default = 0,
 	Suffix = "x", Callback = function(v) F.Aim.prediction = v end })
-aimP2:AddSlider({ Text = "Fire Rate", Flag = "aim_fire", Min = 0.02, Max = 0.5, Decimals = 2, Default = 0.1,
-	Suffix = "s", Callback = function(v) F.Aim.fireRate = v end })
 aimP2:AddColorPicker({ Text = "Target Color", Flag = "aim_targetcolor", Default = COLORS.Red,
 	Callback = function(c) F.Aim.targetColor = c end })
 
@@ -1149,7 +1147,6 @@ local function aimAt(part, smooth, pred, dt)
 	end
 end
 
-local aimFireCd = 0
 Library:StartLoop("aimbot", RunService.RenderStepped, function(dt)
 	local rageOwns = F.Rage and F.Rage.enabled and F.Rage.targetChar   -- don't wipe rage's highlight
 	if not F.Aim.enabled or Library.Destroyed then
@@ -1168,61 +1165,13 @@ Library:StartLoop("aimbot", RunService.RenderStepped, function(dt)
 	F.Aim.target = F.Aim.sticky and part or nil
 	F.Aim.lockedChar = part and part.Parent or nil   -- Highlight Target reads this
 	aimAt(part, F.Aim.smooth, F.Aim.prediction, dt)
-	-- optional auto-shoot while aiming a valid target
-	if part and F.Aim.autoShoot and hasMouseClick and os.clock() >= aimFireCd then
-		aimFireCd = os.clock() + F.Aim.fireRate
-		pcall(mouse1click)
-	end
-end)
-
---== Silent Aim ==--
-local silentPage = AimCat:AddTab("Silent Aim")
-local silentP  = silentPage:AddPanel("Silent Aim")
-local silentP2 = silentPage:AddPanel("Settings")
-F.Silent = { enabled = false, part = "Head", teamCheck = false, wallCheck = false,
-	priority = "Crosshair", autoShoot = true, fireRate = 0.1 }
-
-silentP:AddToggle({ Text = "Enabled", Flag = "silent_enabled", Bind = true, BindNoToggle = true, Callback = function(on)
-	F.Silent.enabled = on
-	if on then Library:Notify("Silent Aim", "Bind the chip to hold, or leave [None] for always-on.", 4, "good") end
-	if on and not hasMouseClick then Library:Notify("Silent Aim", "Firing needs an executor (mouse1click).", 4) end
-end })
-silentP:AddToggle({ Text = "Auto Shoot", Flag = "silent_shoot", Default = true, Callback = function(on) F.Silent.autoShoot = on end })
-silentP:AddToggle({ Text = "Team Check", Flag = "silent_team", Callback = function(on) F.Silent.teamCheck = on end })
-silentP:AddToggle({ Text = "Visible Check", Flag = "silent_wall", Callback = function(on) F.Silent.wallCheck = on end })
-
-silentP2:AddDropdown({ Text = "Target Part", Flag = "silent_part", Options = { "Closest", "Head", "Torso", "Random" },
-	Default = "Head", Callback = function(v) F.Silent.part = v end })
-silentP2:AddDropdown({ Text = "Priority", Flag = "silent_priority", Options = { "Crosshair", "Distance", "Health" },
-	Default = "Crosshair", Callback = function(v) F.Silent.priority = v end })
-silentP2:AddSlider({ Text = "Fire Rate", Flag = "silent_fire", Min = 0.02, Max = 0.5, Decimals = 2, Default = 0.1,
-	Suffix = "s", Callback = function(v) F.Silent.fireRate = v end })
-
--- flick-fire: snap to the target, fire, and restore the camera in the SAME frame so the
--- aim is invisible. No bind = always active; bind a key to gate it to when you hold it.
-local silentCd = 0
-Library:StartLoop("silent", RunService.Heartbeat, function()
-	if not F.Silent.enabled or Library.Destroyed then return end
-	local opt = Library.Options["silent_enabled"]
-	local key = opt and opt.GetKey and opt:GetKey()
-	if key and not isDown(key) then return end            -- if a key is bound, hold it; else always-on
-	if not (F.Silent.autoShoot and hasMouseClick) or os.clock() < silentCd then return end
-	local part = acquireTarget({ fov = F.Aim.fov, teamCheck = F.Silent.teamCheck,
-		wallCheck = F.Silent.wallCheck, part = F.Silent.part, priority = F.Silent.priority })
-	if part then
-		local save = Camera.CFrame
-		Camera.CFrame = CFrame.new(save.Position, part.Position)  -- aim
-		silentCd = os.clock() + F.Silent.fireRate
-		pcall(mouse1click)                                        -- fire (reads camera synchronously)
-		Camera.CFrame = save                                     -- restore instantly (invisible)
-	end
 end)
 
 --== Rage Bot ==--
 local ragePage = AimCat:AddTab("Rage")
 local rageP    = ragePage:AddPanel("Rage Bot")
 local rageP2   = ragePage:AddPanel("Config")
-F.Rage = { enabled = false, onlyFov = false, teamCheck = false, wallCheck = false, autoShoot = true,
+F.Rage = { enabled = false, onlyFov = false, teamCheck = false, wallCheck = false, autoShoot = false,
 	silent = false, faceTarget = false, part = "Head", smooth = 1, prediction = 0, fireRate = 0.05,
 	targetChar = nil }
 
@@ -1233,7 +1182,7 @@ rageP:AddToggle({ Text = "Rage Bot", Flag = "rage_enabled", Bind = true, Callbac
 	if on then Library:Notify("Rage", "Rage ON - auto-killing the nearest enemy. Walk around.", 4, "good") end
 	if on and not hasMouseClick then Library:Notify("Rage", "Shooting needs an executor (mouse1click) - aim-only here.", 4) end
 end })
-rageP:AddToggle({ Text = "Auto Shoot", Flag = "rage_autoshoot", Default = true, Callback = function(on) F.Rage.autoShoot = on end })
+rageP:AddToggle({ Text = "Auto Shoot", Flag = "rage_autoshoot", Callback = function(on) F.Rage.autoShoot = on end })
 rageP:AddToggle({ Text = "Silent", Flag = "rage_silent", Callback = function(on) F.Rage.silent = on end })
 rageP:AddToggle({ Text = "Face Target On Shot", Flag = "rage_face", Callback = function(on) F.Rage.faceTarget = on end })
 rageP:AddToggle({ Text = "Only In FOV Circle", Flag = "rage_fov", Callback = function(on) F.Rage.onlyFov = on end })
@@ -2186,7 +2135,7 @@ local thudPage = VisCat:AddTab("Target HUD")
 local thudP  = thudPage:AddPanel("Show")
 local thudP2 = thudPage:AddPanel("Style")
 
-F.THUD = { enabled = false, showName = true, showTool = true, showHealth = true, showDistance = true, showTeam = false,
+F.THUD = { enabled = false, showName = false, showTool = false, showHealth = false, showDistance = false, showTeam = false,
 	bg = Color3.fromRGB(14, 14, 17), bg2 = COLORS.Purple, accent = Library.Theme.Accent, trans = 0.05,
 	gradient = false, anim = "Gradient", animSpeed = 2, barWave = false, bar1 = COLORS.Purple, bar2 = COLORS.Cyan, gui = nil }
 posFlag("thud_pos", F.THUD)  -- dragged position persists in configs
@@ -2306,10 +2255,10 @@ thudP:AddToggle({ Text = "Enabled", Flag = "thud", Callback = function(on)
 		end)
 	else Library:StopLoop("thud"); if F.THUD.gui then F.THUD.gui.Visible = false end end
 end })
-thudP:AddToggle({ Text = "Show Name", Flag = "thud_name", Default = true, Callback = function(on) F.THUD.showName = on end })
-thudP:AddToggle({ Text = "Show Tool", Flag = "thud_tool", Default = true, Callback = function(on) F.THUD.showTool = on end })
-thudP:AddToggle({ Text = "Show Health", Flag = "thud_health", Default = true, Callback = function(on) F.THUD.showHealth = on end })
-thudP:AddToggle({ Text = "Show Distance", Flag = "thud_dist", Default = true, Callback = function(on) F.THUD.showDistance = on end })
+thudP:AddToggle({ Text = "Show Name", Flag = "thud_name", Callback = function(on) F.THUD.showName = on end })
+thudP:AddToggle({ Text = "Show Tool", Flag = "thud_tool", Callback = function(on) F.THUD.showTool = on end })
+thudP:AddToggle({ Text = "Show Health", Flag = "thud_health", Callback = function(on) F.THUD.showHealth = on end })
+thudP:AddToggle({ Text = "Show Distance", Flag = "thud_dist", Callback = function(on) F.THUD.showDistance = on end })
 thudP:AddToggle({ Text = "Show Team", Flag = "thud_team", Callback = function(on) F.THUD.showTeam = on end })
 
 thudP2:AddColorPicker({ Text = "Accent", Flag = "thud_accent", Default = COLORS.Red, Callback = function(c) F.THUD.accent = c end })
@@ -2332,7 +2281,7 @@ local trP = extraPage:AddPanel("Target Renderer")
 -- Jump Circle: a real ring laid flat on the ground (CylinderHandleAdornment
 -- adorned to Terrain = world space), spawned every time you jump
 F.JumpC = { enabled = false, color = COLORS.Cyan, color2 = COLORS.Purple, anim = "Off", animSpeed = 2,
-	style = "Expand", speed = 1, size = 11, thickness = 0.4, filled = false, onTop = true, rings = {} }
+	style = "Expand", speed = 1, size = 11, thickness = 0.4, filled = false, onTop = false, rings = {} }
 
 local function jcGround()
 	local char = getChar(); if not char then return nil end
@@ -2407,7 +2356,7 @@ jcP:AddSlider({ Text = "Size", Flag = "jumpc_size", Min = 3, Max = 25, Default =
 jcP:AddSlider({ Text = "Ring Thickness", Flag = "jumpc_thickness", Min = 0.1, Max = 2, Decimals = 1, Default = 0.4,
 	Callback = function(v) F.JumpC.thickness = v end })
 jcP:AddToggle({ Text = "Filled Disc", Flag = "jumpc_fill", Callback = function(on) F.JumpC.filled = on end })
-jcP:AddToggle({ Text = "Through Walls", Flag = "jumpc_ontop", Default = true, Callback = function(on) F.JumpC.onTop = on end })
+jcP:AddToggle({ Text = "Through Walls", Flag = "jumpc_ontop", Callback = function(on) F.JumpC.onTop = on end })
 jcP:AddColorPicker({ Text = "Color 1", Flag = "jumpc_color", Default = COLORS.Cyan, Callback = function(c) F.JumpC.color = c end })
 jcP:AddColorPicker({ Text = "Color 2", Flag = "jumpc_color2", Default = COLORS.Purple, Callback = function(c) F.JumpC.color2 = c end })
 jcP:AddDropdown({ Text = "Animation", Flag = "jumpc_anim", Options = { "Off", "Pulse", "Rainbow" },
@@ -2421,9 +2370,9 @@ showJcSubs(false)
 -- multi-mode ring system + an overhead marker + a light beam. All real
 -- HandleAdornments = perspective-correct 3D.
 F.TR = { enabled = false, style = "Orbit", shape = "Sphere", anim = "Wave", color = COLORS.Purple, color2 = COLORS.Cyan,
-	speed = 1.5, radius = 2.6, orb = 0.3, strands = 3, trail = 8, heightScale = 1, bob = 0.25, glow = true, onTop = true, animSpeed = 2,
+	speed = 1.5, radius = 2.6, orb = 0.3, strands = 3, trail = 8, heightScale = 1, bob = 0.25, glow = false, onTop = false, animSpeed = 2,
 	teamCheck = false,
-	ring = true, ringStyle = "Ground", ringCount = 1, ringFill = false, ringThick = 0.22, ringTilt = 0, ringSpeed = 1.2,
+	ring = false, ringStyle = "Ground", ringCount = 1, ringFill = false, ringThick = 0.22, ringTilt = 0, ringSpeed = 1.2,
 	marker = false, markerShape = "Diamond", markerSize = 0.6, markerSpin = 2, markerCur = nil,
 	beam = false, beamWidth = 0.14, beamHeight = 30,
 	pool = {}, rings = {}, markerAd = nil, beamAd = nil, rot = 0 }
@@ -2693,8 +2642,8 @@ trP:AddSlider({ Text = "Height", Flag = "trender_height", Min = 0.3, Max = 2.5, 
 	Callback = function(v) F.TR.heightScale = v end })
 trP:AddSlider({ Text = "Bob Amount", Flag = "trender_bob", Min = 0, Max = 0.6, Decimals = 2, Default = 0.25,
 	Callback = function(v) F.TR.bob = v end })
-trP:AddToggle({ Text = "Glow", Flag = "trender_glow", Default = true, Callback = function(on) F.TR.glow = on end })
-trP:AddToggle({ Text = "Ring", Flag = "trender_ring", Default = true, Callback = function(on)
+trP:AddToggle({ Text = "Glow", Flag = "trender_glow", Callback = function(on) F.TR.glow = on end })
+trP:AddToggle({ Text = "Ring", Flag = "trender_ring", Callback = function(on)
 	F.TR.ring = on; trSetVis(TR_RING, on and F.TR.enabled) end })
 trP:AddDropdown({ Text = "Ring Motion", Flag = "trender_ringstyle", Options = { "Ground", "Scan", "Pulse", "Stack", "Halo" }, Default = "Ground",
 	Sub = true, Callback = function(v) F.TR.ringStyle = v end })
@@ -2721,7 +2670,7 @@ trP:AddSlider({ Text = "Beam Width", Flag = "trender_bwidth", Min = 0.03, Max = 
 trP:AddSlider({ Text = "Beam Height", Flag = "trender_bheight", Min = 6, Max = 60, Default = 30, Sub = true,
 	Callback = function(v) F.TR.beamHeight = v end })
 trP:AddToggle({ Text = "Team Check", Flag = "trender_team", Callback = function(on) F.TR.teamCheck = on end })
-trP:AddToggle({ Text = "Through Walls", Flag = "trender_ontop", Default = true, Callback = function(on) F.TR.onTop = on end })
+trP:AddToggle({ Text = "Through Walls", Flag = "trender_ontop", Callback = function(on) F.TR.onTop = on end })
 trP:AddColorPicker({ Text = "Color 1", Flag = "trender_color", Default = COLORS.Purple, Callback = function(c) F.TR.color = c end })
 trP:AddColorPicker({ Text = "Color 2", Flag = "trender_color2", Default = COLORS.Cyan, Callback = function(c) F.TR.color2 = c end })
 trP:AddDropdown({ Text = "Animation", Flag = "trender_anim", Options = { "Off", "Gradient", "Wave", "Rainbow", "Pulse" },
@@ -3038,7 +2987,7 @@ moveP2:AddSlider({ Text = "Freecam Speed", Flag = "freecam_speed", Min = 10, Max
 local camPage = MiscCat:AddTab("Camera")
 local camP = camPage:AddPanel("Camera")
 F.Cam = { mode = "Off", dist = 12, freeZoom = false, bypass = false, bypassMode = "Piggyback", offX = 0, offY = 0,
-	sens = 1, smooth = 0, wallCheck = true, yaw = nil, pitch = nil, _lastBase = nil, _lastOut = nil }
+	sens = 1, smooth = 0, wallCheck = false, yaw = nil, pitch = nil, _lastBase = nil, _lastOut = nil }
 local camBound = false
 local function unbindCam()
 	if camBound then
@@ -3219,7 +3168,7 @@ camP:AddDropdown({ Text = "Bypass Mode", Flag = "cam_mode", Options = { "Piggyba
 	end })
 camP:AddSlider({ Text = "Cam Sensitivity", Flag = "cam_sens", Min = 0.2, Max = 3, Decimals = 1, Default = 1, Sub = true, Callback = function(v) F.Cam.sens = v end })
 camP:AddSlider({ Text = "Cam Smoothing", Flag = "cam_smooth", Min = 0, Max = 0.9, Decimals = 2, Default = 0, Sub = true, Callback = function(v) F.Cam.smooth = v end })
-camP:AddToggle({ Text = "Wall Check", Flag = "cam_wallcheck", Default = true, Sub = true, Callback = function(on) F.Cam.wallCheck = on end })
+camP:AddToggle({ Text = "Wall Check", Flag = "cam_wallcheck", Sub = true, Callback = function(on) F.Cam.wallCheck = on end })
 camP:AddSlider({ Text = "Shoulder Offset X", Flag = "cam_offx", Min = -8, Max = 8, Decimals = 1, Default = 0, Sub = true, Callback = function(v) F.Cam.offX = v end })
 camP:AddSlider({ Text = "Height Offset Y", Flag = "cam_offy", Min = -4, Max = 8, Decimals = 1, Default = 0, Sub = true, Callback = function(v) F.Cam.offY = v end })
 showCamSubs(false)

@@ -18,10 +18,11 @@
 --// ------------------------------------------------------------------
 --// CONFIG  (edit these)
 --// ------------------------------------------------------------------
--- the Universal script that gets injected. Just the raw URL - the hub runs
--- loadstring(game:HttpGet(SCRIPT_URL))() for you. If the repo is PRIVATE, paste
--- the tokenised "?token=..." raw URL instead.
-local SCRIPT_URL = "https://raw.githubusercontent.com/mewzeee/XRust-AI-Script/main/xRust.lua"
+-- Scripts the hub injects. Just the raw URL - the hub runs
+-- loadstring(game:HttpGet(url))() for you. If the repo is PRIVATE, paste the
+-- tokenised "?token=..." raw URL instead.
+local SCRIPT_URL     = "https://raw.githubusercontent.com/mewzeee/XRust-AI-Script/main/xRust.lua"
+local BASKETBALL_URL = "https://raw.githubusercontent.com/mewzeee/XRust-AI-Script/main/xRustBasketball.lua"
 
 --// ------------------------------------------------------------------
 --// SERVICES
@@ -282,8 +283,11 @@ local function selectTab(name)
 	activeTab = name
 end
 local function addTab(name)
-	-- flat, transparent tabs — active = white text + white underline
-	local btn = create("TextButton", { Parent = tabHolder, AutoButtonColor = false, Size = UDim2.new(0, 100, 1, 0),
+	-- flat, transparent tabs — active = white text + white underline.
+	-- Width follows the label (Code is monospace, ~7.8px per char at 13px) so a
+	-- long game name doesn't get clipped inside a fixed 100px button.
+	local w = math.max(100, #name * 8 + 18)
+	local btn = create("TextButton", { Parent = tabHolder, AutoButtonColor = false, Size = UDim2.new(0, w, 1, 0),
 		BackgroundTransparency = 1, BorderSizePixel = 0, Font = FONT, Text = name, TextSize = 13,
 		TextColor3 = Theme.TextOff, ZIndex = 14 })
 	underlines[name] = create("Frame", { Parent = btn, Size = UDim2.new(0.55, 0, 0, 2), AnchorPoint = Vector2.new(0.5, 1),
@@ -342,15 +346,15 @@ do
 		Sz = UDim2.new(1, -32, 1, -40), Pos = UDim2.new(0, 16, 0, 34) }).ZIndex = 12
 end
 
--- ================= UNIVERSAL TAB =================
-local uniPage = addTab("Universal")
-local console  -- forward ref
-do
-	-- left column: description + changelog
-	local left = create("Frame", { Parent = uniPage, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), ZIndex = 11 })
-	local desc = card(left, "XRust Universal", { Sz = UDim2.new(1, 0, 0, 150) })
-	label(desc, "A client-side aim & visual hub that works in most Roblox shooters.\n\nAimbot, silent aim, rage bot, triggerbot, full ESP, FOV circle, snaplines, target HUD, anti-aim, fly, and more — all configurable.", {
-		Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
+-- ================= SCRIPT TABS =================
+-- Every script tab is the same shape: description + changelog on the left,
+-- fake-loader console + INJECT on the right. Built by one function so adding a
+-- game is a single makeScriptTab call rather than another 90 lines.
+local function makeScriptTab(cfg)
+	local page = addTab(cfg.tab)
+	local left = create("Frame", { Parent = page, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), ZIndex = 11 })
+	local desc = card(left, cfg.title, { Sz = UDim2.new(1, 0, 0, 150) })
+	label(desc, cfg.desc, { Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
 		Sz = UDim2.new(1, -28, 1, -40), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 12
 
 	local chg = card(left, "Changelog", { Sz = UDim2.new(1, 0, 1, -160), Pos = UDim2.new(0, 0, 0, 160) })
@@ -358,15 +362,13 @@ do
 		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
 	pad(chgScroll, 14, 4, 12, 8)
-	label(chgScroll, "v1.0\n• Initial release: aim suite, ESP, FOV, snaplines.\n• Target renderer + jump circles as true 3D FX.\n• Anti-aim, camera bypass, config system.\n• Rich target renderer: 12 styles, ring, marker, beam.", {
-		Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
+	label(chgScroll, cfg.changelog, { Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
 		Sz = UDim2.new(1, 0, 0, 0), Pos = UDim2.new(0, 0, 0, 0) }).AutomaticSize = Enum.AutomaticSize.Y
 	chgScroll:FindFirstChildOfClass("TextLabel").ZIndex = 12
 
-	-- right column: console + inject
-	local right = create("Frame", { Parent = uniPage, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), Position = UDim2.new(0.5, 6, 0, 0), ZIndex = 11 })
+	local right = create("Frame", { Parent = page, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), Position = UDim2.new(0.5, 6, 0, 0), ZIndex = 11 })
 	local con = card(right, "Console", { Sz = UDim2.new(1, 0, 1, -44) })
-	console = create("ScrollingFrame", { Parent = con, BackgroundTransparency = 1, BorderSizePixel = 0,
+	local console = create("ScrollingFrame", { Parent = con, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
 	pad(console, 12, 6, 10, 8)
@@ -383,21 +385,19 @@ do
 	local conOrder = 0
 	local function consoleLine(text, col)
 		conOrder = conOrder + 1
-		local l = create("TextLabel", { Parent = console, BackgroundTransparency = 1, Font = FONT, Text = text,
+		create("TextLabel", { Parent = console, BackgroundTransparency = 1, Font = FONT, Text = text,
 			TextSize = 12.5, TextColor3 = col or Theme.TextOn, TextXAlignment = Enum.TextXAlignment.Left,
 			Size = UDim2.new(1, 0, 0, 16), LayoutOrder = conOrder, ZIndex = 14 })
 		console.CanvasPosition = Vector2.new(0, math.huge)
-		return l
 	end
-	consoleLine("[ready] press INJECT to load XRust Universal.", Theme.TextOff)
+	consoleLine("[ready] press INJECT to load " .. cfg.title .. ".", Theme.TextOff)
 
-	-- realistic loader steps: {message, delay-before-next}
 	local STEPS = {
 		{ "initializing loader environment", 0.35 },
 		{ "resolving executor capabilities", 0.3 },
 		{ "establishing secure connection", 0.45 },
 		{ "authenticating session", 0.4 },
-		{ "fetching XRust Universal payload", 0.55 },
+		{ "fetching " .. cfg.title .. " payload", 0.55 },
 		{ "verifying payload integrity", 0.35 },
 		{ "mapping runtime modules", 0.4 },
 		{ "loading assets & signatures", 0.4 },
@@ -409,19 +409,14 @@ do
 		injecting = true; injectBtn.Active = false
 		injectBtn.Text = "INJECTING…"; injectBtn.TextColor3 = Theme.TextOff
 		task.spawn(function()
-			-- The old second HWID check called KeyAuth here. HWID limits are now
-			-- enforced by the key system before this hub loads (see the provider's
-			-- hwid_limit), so there is nothing to re-verify against.
 			for _, step in ipairs(STEPS) do
 				consoleLine("  " .. step[1] .. " ...", Theme.TextOn)
 				task.wait(step[2])
-				console:FindFirstChildOfClass("TextLabel")   -- keep alive
 			end
-			-- fetch + run the actual universal script
 			local ok, err = pcall(function()
 				consoleLine("  downloading script source", Theme.TextOn); task.wait(0.2)
-				local src = httpGet(SCRIPT_URL)
-				if not src or #src < 50 then error("empty script (check SCRIPT_URL)") end
+				local src = httpGet(cfg.url)
+				if not src or #src < 50 then error("empty script (check the url)") end
 				consoleLine("  executing (" .. #src .. " bytes)", Theme.TextOn); task.wait(0.25)
 				local fn = loadstring(src)
 				if not fn then error("loadstring failed") end
@@ -432,13 +427,25 @@ do
 				injectBtn.Text = "RETRY INJECT"; injectBtn.TextColor3 = Theme.TextHdr; injectBtn.Active = true; injecting = false
 				return
 			end
-			consoleLine("[✓] injected — XRust Universal is running", Theme.Good)
+			consoleLine("[✓] injected — " .. cfg.title .. " is running", Theme.Good)
 			task.wait(0.5)
 			if hubSnowConn then hubSnowConn:Disconnect() end
 			ScreenGui:Destroy()
 		end)
 	end)
 end
+
+makeScriptTab({
+	tab = "Universal", title = "XRust Universal", url = SCRIPT_URL,
+	desc = "A client-side aim & visual hub that works in most Roblox shooters.\n\nAimbot, rage bot, triggerbot, full ESP, FOV circle, snaplines, target HUD, anti-aim, fly, and more — all configurable.",
+	changelog = "v1.0\n• Initial release: aim suite, ESP, FOV, snaplines.\n• Target renderer + jump circles as true 3D FX.\n• Anti-aim, camera bypass, config system.\n• Rich target renderer: 12 styles, ring, marker, beam.",
+})
+
+makeScriptTab({
+	tab = "Basketball", title = "Basketball Legends", url = BASKETBALL_URL,
+	desc = "Auto Green for Basketball Legends.\n\nDrives the game's own shot meter: hold your shoot key and the bar is tweened to full once it passes the release point. Release point and tween time are tunable.",
+	changelog = "v1.0\n• Auto Green with adjustable release point + tween time.\n• Selectable shoot key, optional basketball check.\n• Auto Guard: holds you in front of the nearest player.\n• Shared PlayerList + config system.",
+})
 
 -- ================= PLACEHOLDER TAB =================
 local phPage = addTab("Coming Soon")
