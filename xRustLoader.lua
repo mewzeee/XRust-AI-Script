@@ -80,6 +80,35 @@ local Account = {
 	hwid = getHWID(),
 }
 
+-- /verifyOpen failure codes. KEY_EXPIRED / HWID_BANNED / SERVICE_MISMATCH /
+-- HWID_MISMATCH are documented (roblox-sdk/external-loader); KEY_INVALID is what
+-- the live endpoint returns for a bad key. The code lands on .error or .message
+-- depending on the branch, so both are checked.
+local VERIFY_ERRORS = {
+	KEY_INVALID      = "Invalid key — check for typos, or claim a new one.",
+	KEY_EXPIRED      = "That key has expired — claim a new one.",
+	HWID_BANNED      = "This device is banned.",
+	HWID_MISMATCH    = "That key is bound to another device.",
+	SERVICE_MISMATCH = "That key is not for xRust.",
+	KEY_USED         = "That key has already been used.",
+	HWID_LIMIT       = "That key has hit its device limit.",
+}
+-- Turns a failed verify into something a user can act on. A HWID ban can carry a
+-- staff-written reason; the field it arrives on isn't documented, so several
+-- likely names are checked and appended when present.
+local function verifyErrorText(res)
+	if type(res) ~= "table" then return "Could not reach the key server." end
+	local code = tostring(res.error or res.message or "")
+	local text = VERIFY_ERRORS[code:upper()] or ((code ~= "" and code) or "Verification failed.")
+	for _, k in ipairs({ "reason", "ban_reason", "banReason", "details", "detail" }) do
+		local r = res[k]
+		if type(r) == "string" and r ~= "" and r:upper() ~= code:upper() then
+			return text .. " Reason: " .. r
+		end
+	end
+	return text
+end
+
 -- ISO-8601 ("2026-07-17T09:30:00.000Z") -> unix seconds. Luau has no strptime,
 -- so pull the fields out by hand. os.time() reads a table as LOCAL time, so the
 -- UTC offset is measured and added back on.
@@ -540,9 +569,8 @@ do
 				refreshAccount()
 				licStatus.Text = "Claimed — bound to this HWID."; licStatus.TextColor3 = Theme.Good
 			else
-				local m = tostring((res and (res.error or res.message)) or "Invalid key.")
-				if m:upper():find("HWID") then m = "HWID limit reached — create a ticket in the Discord." end
-				licStatus.Text = m; licStatus.TextColor3 = Theme.Bad
+				pcall(function() warn("[XRust] claim failed:", HttpService:JSONEncode(res or {})) end)
+				licStatus.Text = verifyErrorText(res); licStatus.TextColor3 = Theme.Bad
 			end
 		end)
 	end)
