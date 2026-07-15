@@ -686,8 +686,8 @@ function Library:AddCategory(name, order)
 					searchBox = create("TextBox", { Parent = listFrame, Size = UDim2.new(1, 0, 0, ROW_H),
 						BackgroundColor3 = Library.Theme.Panel2, BorderSizePixel = 0, Font = Library.Font,
 						TextSize = 11.5, TextColor3 = Library.Theme.TextOn, ClearTextOnFocus = false,
-						PlaceholderText = "  search...", PlaceholderColor3 = Library.Theme.TextOff,
-						Text = "", TextXAlignment = Enum.TextXAlignment.Left })
+						PlaceholderText = "search...", PlaceholderColor3 = Library.Theme.TextOff,
+						Text = "", TextXAlignment = Enum.TextXAlignment.Center })
 				end
 
 				local listScroll = create("ScrollingFrame", { Parent = listFrame, BackgroundTransparency = 1,
@@ -1594,14 +1594,12 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 							task.wait()
 						end
 					end)
-					if green then
-						playGreenSound()
-						-- Skin Changer is defined further down, so go through F
-						-- (resolved at runtime) rather than an upvalue
-						if F.GFX and F.GFX.enabled and F.GFX.play then
-							pcall(F.GFX.play, F.GFX.name)
-						end
-					end
+					-- NOTE: the custom green effect is NOT fired from here. It used
+					-- to be, which meant it only ever played on greens Auto Green
+					-- produced — nothing happened if you greened by hand, or had
+					-- Auto Green off. A watcher on the meter itself handles it now
+					-- (see "gfxwatch"), so every real green triggers it.
+					if green then playGreenSound() end
 				end
 			end
 			task.wait()
@@ -2456,7 +2454,54 @@ local function playEffect(name)
 	end)
 end
 
-F.GFX.play = playEffect   -- Auto Green calls this via F, since it's defined above
+F.GFX.play = playEffect
+
+-- ── green detector ────────────────────────────────────────────────────
+-- Watch the shot meter itself rather than hooking Auto Green, so the effect
+-- fires on EVERY green — including ones you hit by hand with Auto Green off.
+-- The game greens a shot when the meter reads full at release, so: bar reaches
+-- full, then drops away = a green just landed. A "great" never reaches full, so
+-- it can't false-fire.
+local gfxArmed, gfxFullAt, gfxLastPlay = false, 0, 0
+
+local function gfxBar()
+	local pg = LocalPlayer:FindFirstChild("PlayerGui")
+	local vis = pg and pg:FindFirstChild("Visual")
+	local sh = vis and vis:FindFirstChild("Shooting")
+	return sh and sh:FindFirstChild("Bar")
+end
+
+local function fireGreenEffect()
+	if os.clock() - gfxLastPlay < 0.6 then return end   -- one per shot
+	gfxLastPlay = os.clock()
+	pcall(playEffect, F.GFX.name)
+end
+
+Library:StartLoop("gfxwatch", RunService.Heartbeat, function()
+	if Library.Destroyed or not F.GFX.enabled or F.GFX.name == "None" then return end
+	local bar = gfxBar()
+
+	if not bar then
+		-- meter destroyed while it was full: that was the release
+		if gfxArmed and os.clock() - gfxFullAt < 1.5 then
+			gfxArmed = false
+			fireGreenEffect()
+		end
+		return
+	end
+
+	local y = bar.Size.Y.Scale
+	if y >= 0.985 then
+		gfxArmed = true
+		gfxFullAt = os.clock()
+	elseif gfxArmed and y < 0.25 and os.clock() - gfxFullAt < 1.5 then
+		-- was full, now emptied -> released on green
+		gfxArmed = false
+		fireGreenEffect()
+	elseif gfxArmed and os.clock() - gfxFullAt > 2 then
+		gfxArmed = false   -- stale, never released
+	end
+end)
 
 -- ── Streak Effect ─────────────────────────────────────────────────────
 -- The live dump showed STREAK_EFFECT_PART + BodyFlame/EyeFlame parented to
