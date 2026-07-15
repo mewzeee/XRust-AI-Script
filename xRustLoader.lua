@@ -87,11 +87,11 @@ local Account = {
 local VERIFY_ERRORS = {
 	KEY_INVALID      = "Invalid key — check for typos, or claim a new one.",
 	KEY_EXPIRED      = "That key has expired — claim a new one.",
-	HWID_BANNED      = "This device is banned.",
-	HWID_MISMATCH    = "That key is bound to another device.",
+	HWID_BANNED      = "This HWID is banned.",
+	HWID_MISMATCH    = "That key is bound to another HWID.",
 	SERVICE_MISMATCH = "That key is not for xRust.",
 	KEY_USED         = "That key has already been used.",
-	HWID_LIMIT       = "That key has hit its device limit.",
+	HWID_LIMIT       = "That key has hit its HWID limit.",
 	-- a key deleted or revoked in the dashboard (Key.is_invalidated in the REST
 	-- schema). The exact wire code isn't documented, so the likely spellings are
 	-- all mapped to the same message.
@@ -200,15 +200,25 @@ local function keyExpiry()
 	return scanExpiry(rawget(g, "XRUST_KEY_INFO"), 0)
 end
 
--- Prints every field of the verify payload once, so any expiry field this build
--- doesn't know about is visible in the console rather than silently ignored.
-local function dumpKeyPayload()
-	local info = rawget(getgenv(), "XRUST_KEY_INFO")
-	if type(info) ~= "table" then
-		warn("[XRust] no XRUST_KEY_INFO — hub run outside the key flow, or the key window is an older build.")
-		return
+-- Every field of the verify payload as text. Shown in Settings > Key Debug and
+-- logged on boot, so an expiry field this build doesn't know about is visible
+-- rather than silently ignored. Temporary: delete once the expiry is wired to
+-- the real field name.
+local function payloadSummary()
+	local g = getgenv()
+	local lines = {}
+	for _, name in ipairs({ "JD_EXPIRES_AT", "JD_IS_PREMIUM", "JD_CREATED_AT", "JD_REASON" }) do
+		table.insert(lines, name .. " = " .. tostring(rawget(g, name)))
 	end
-	local parts = {}
+
+	local info = rawget(g, "XRUST_KEY_INFO")
+	if type(info) ~= "table" then
+		table.insert(lines, "XRUST_KEY_INFO = " .. tostring(info))
+		table.insert(lines, "(hub run outside the key flow, or the key window is an older build)")
+		return table.concat(lines, "\n")
+	end
+
+	local fields = {}
 	for k, v in pairs(info) do
 		local val = tostring(v)
 		if type(v) == "table" then
@@ -217,11 +227,16 @@ local function dumpKeyPayload()
 			table.sort(sub)
 			val = "{" .. table.concat(sub, ", ") .. "}"
 		end
-		table.insert(parts, tostring(k) .. " = " .. val .. "  <" .. typeof(v) .. ">")
+		table.insert(fields, tostring(k) .. " = " .. val .. "  <" .. typeof(v) .. ">")
 	end
-	table.sort(parts)
-	warn("[XRust] verify payload fields:\n  " .. table.concat(parts, "\n  "))
-	warn("[XRust] JD_EXPIRES_AT = " .. tostring(rawget(getgenv(), "JD_EXPIRES_AT")))
+	table.sort(fields)
+	table.insert(lines, "--- verify payload ---")
+	for _, f in ipairs(fields) do table.insert(lines, f) end
+	return table.concat(lines, "\n")
+end
+
+local function dumpKeyPayload()
+	warn("[XRust] key debug:\n" .. payloadSummary())
 end
 
 --// ------------------------------------------------------------------
@@ -664,6 +679,19 @@ do
 	nameBox.Text = Profile.displayName or ""
 	proStatus = label(proCard, "", { Color = Theme.TextOff, Size = 13, Sz = UDim2.new(1, -28, 0, 18), Pos = UDim2.new(0, 14, 0, 106) })
 	proStatus.ZIndex = 14
+
+	-- Key Debug card: dumps the raw verify payload so the real expiry field can
+	-- be identified. TEMPORARY — remove once "Expires" reads the right field.
+	local dbgCard = card(setPage, "Key Debug", { Sz = UDim2.new(1, 0, 1, -292), Pos = UDim2.new(0, 0, 0, 292) })
+	local dbgScroll = create("ScrollingFrame", { Parent = dbgCard, BackgroundTransparency = 1, BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
+	pad(dbgScroll, 14, 4, 12, 8)
+	local dbgLbl = label(dbgScroll, payloadSummary(), { Color = Theme.TextOff, Size = 11.5, Wrap = true,
+		YAlign = Enum.TextYAlignment.Top, Sz = UDim2.new(1, 0, 0, 0), Pos = UDim2.new(0, 0, 0, 0) })
+	dbgLbl.AutomaticSize = Enum.AutomaticSize.Y
+	dbgLbl.ZIndex = 12
+	dbgLbl.TextXAlignment = Enum.TextXAlignment.Left
 end
 
 selectTab("Home")

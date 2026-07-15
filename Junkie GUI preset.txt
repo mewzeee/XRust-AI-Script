@@ -84,11 +84,11 @@ local result = (function()
     local VERIFY_ERRORS = {
         KEY_INVALID      = "Invalid key - check for typos, or get a new one",
         KEY_EXPIRED      = "This key has expired - get a new one",
-        HWID_BANNED      = "This device is banned",
-        HWID_MISMATCH    = "This key is bound to another device",
+        HWID_BANNED      = "This HWID is banned",
+        HWID_MISMATCH    = "This key is bound to another HWID",
         SERVICE_MISMATCH = "This key is not for xRust",
         KEY_USED         = "This key has already been used",
-        HWID_LIMIT       = "This key has hit its device limit",
+        HWID_LIMIT       = "This key has hit its HWID limit",
         -- a key deleted or revoked in the dashboard (Key.is_invalidated in the
         -- REST schema). The wire code isn't documented, so the likely spellings
         -- all map to the same message.
