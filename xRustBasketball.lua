@@ -1803,14 +1803,38 @@ local skinPage = ShootCat:AddTab("Skin Changer")
 local skP  = skinPage:AddPanel("Ball Skin")
 local skP2 = skinPage:AddPanel("Custom")
 
--- CLIENT-SIDE ONLY — and be clear about what that means: the ball's look is a
--- SpecialMesh under the Basketball part, and its skin is just Mesh.TextureId
--- (the dump showed the default as asset 13818804314). Writing that locally
--- retextures the ball for YOU. Everyone else still sees whatever the server
--- says you own, because VisualService decides that server-side. This is a
--- local visual, not a way to get skins you don't have.
-F.Skin = { enabled = false, texture = "", mesh = "", color = Color3.fromRGB(255, 255, 255),
-	useColor = false, material = "Fabric", defaultTex = nil, defaultMesh = nil, applied = nil }
+-- CLIENT-SIDE ONLY. The real equip path is EconomyService.RE.Equip, which is a
+-- server call gated on what you own — so this cannot give you skins. What it
+-- CAN do is rebuild any skin locally out of the game's own assets:
+--
+--   ReplicatedStorage.Assets.Ball.<SkinName>   (203 of them)
+--       CUSTOM_SKIN_HOLDER   -> meshes that sit on the basketball
+--       CUSTOM_AURA          -> parts welded to your character
+--
+-- Cloning those onto the ball yourself reproduces the look for YOU. Nobody else
+-- sees it. The simple path is also still here: the ball's plain skin is just
+-- Mesh.TextureId on its SpecialMesh (default 13818804314).
+F.Skin = { enabled = false, preset = "None", aura = false,
+	texture = "", mesh = "", color = Color3.fromRGB(255, 255, 255),
+	useColor = false, material = "Fabric", defaultTex = nil, defaultMesh = nil }
+
+local RS = game:GetService("ReplicatedStorage")
+local SKIN_TAG = "XRUST_SKIN"
+
+local function skinFolder()
+	local a = RS:FindFirstChild("Assets")
+	return a and a:FindFirstChild("Ball")
+end
+
+local function skinNames()
+	local out = { "None" }
+	local f = skinFolder()
+	if f then
+		for _, d in ipairs(f:GetChildren()) do table.insert(out, d.Name) end
+		table.sort(out)
+	end
+	return out
+end
 
 local function ballMesh()
 	local b = findBall()
@@ -1845,10 +1869,117 @@ local function texUrl(id)
 	return "http://www.roblox.com/asset/?id=" .. id
 end
 
+-- strip anything WE parented, leaving the game's own instances alone
+local function clearSkinClones()
+	local ball = findBall()
+	local targets = {}
+	if ball then table.insert(targets, ball) end
+	local c = LocalPlayer.Character
+	if c then table.insert(targets, c) end
+	for _, root in ipairs(targets) do
+		for _, d in ipairs(root:GetDescendants()) do
+			if d.Name == SKIN_TAG then pcall(function() d:Destroy() end) end
+		end
+	end
+end
+
+-- Clone a skin's parts and weld them on. Anchored=false + Massless + a
+-- WeldConstraint is what makes them ride the ball instead of hanging in the air
+-- or dragging its physics around.
+local function attachClone(src, anchor, tagName)
+	local clone = src:Clone()
+	clone.Name = tagName
+	local parts = {}
+	if clone:IsA("BasePart") then table.insert(parts, clone) end
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BasePart") then table.insert(parts, d) end
+	end
+	for _, p in ipairs(parts) do
+		p.Anchored = false
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Massless = true
+		p.CFrame = anchor.CFrame
+		local w = Instance.new("WeldConstraint")
+		w.Part0 = anchor
+		w.Part1 = p
+		w.Parent = p
+	end
+	clone.Parent = anchor
+	return #parts
+end
+
+local function applyPreset(name)
+	clearSkinClones()
+	if name == "None" then return end
+	local f = skinFolder()
+	local skin = f and f:FindFirstChild(name)
+	local ball = findBall()
+	if not skin then Library:Notify("Skin", "'" .. name .. "' not in Assets.Ball.", 3); return end
+	if not ball then Library:Notify("Skin", "No ball nearby — grab one first.", 3); return end
+
+	local n = 0
+	-- ball meshes
+	local holder = skin:FindFirstChild("CUSTOM_SKIN_HOLDER", true)
+	if holder then n = n + attachClone(holder, ball, SKIN_TAG) end
+
+	-- character aura (optional): each child is named after the limb it welds to
+	if F.Skin.aura then
+		local aura = skin:FindFirstChild("CUSTOM_AURA", true)
+		local char = LocalPlayer.Character
+		if aura and char then
+			for _, limb in ipairs(aura:GetChildren()) do
+				local part = char:FindFirstChild(limb.Name)
+				if part and part:IsA("BasePart") then
+					n = n + attachClone(limb, part, SKIN_TAG)
+				end
+			end
+		end
+	end
+
+	if n == 0 then
+		Library:Notify("Skin", "'" .. name .. "' had no parts to attach.", 3)
+	else
+		Library:Notify("Skin", ("Applied %s (%d parts)."):format(name, n), 2, "good")
+	end
+end
+
+skP:AddDropdown({ Text = "Ball Skin", Flag = "skin_preset", Options = skinNames(), Default = "None",
+	Callback = function(v)
+		F.Skin.preset = v
+		if F.Skin.enabled then applyPreset(v) end
+	end })
+skP:AddToggle({ Text = "Include Aura", Flag = "skin_aura", Callback = function(on)
+	F.Skin.aura = on
+	if F.Skin.enabled then applyPreset(F.Skin.preset) end
+end })
+skP:AddButton({ Text = "Re-apply", Callback = function()
+	if F.Skin.enabled then applyPreset(F.Skin.preset) else Library:Notify("Skin", "Enable it first.", 2) end
+end })
+skP:AddButton({ Text = "Dump Selected Skin", Callback = function()
+	local f = skinFolder()
+	local skin = f and f:FindFirstChild(F.Skin.preset)
+	if not skin then Library:Notify("Skin", "Pick a skin first.", 2); return end
+	local lines = { skin:GetFullName() }
+	for _, d in ipairs(skin:GetDescendants()) do
+		table.insert(lines, ("%s  <%s>"):format(d:GetFullName():sub(#skin:GetFullName() + 2), d.ClassName))
+	end
+	local s = table.concat(lines, "\n")
+	if typeof(setclipboard) == "function" then pcall(setclipboard, s) end
+	print(s)
+	Library:Notify("Skin", "Structure copied to clipboard.", 3, "good")
+end })
+
 skP:AddToggle({ Text = "Enabled", Flag = "skin_enabled", Callback = function(on)
 	F.Skin.enabled = on
 	rememberDefaults()
-	if not on then restoreSkin() end
+	if on then
+		applyPreset(F.Skin.preset)
+	else
+		clearSkinClones()
+		restoreSkin()
+	end
 end })
 skP:AddToggle({ Text = "Tint Ball", Flag = "skin_usecolor", Callback = function(on) F.Skin.useColor = on end })
 skP:AddColorPicker({ Text = "Tint", Flag = "skin_color", Default = Color3.fromRGB(255, 255, 255),
@@ -1861,6 +1992,7 @@ skP:AddButton({ Text = "Reset To Default", Callback = function()
 	Library:Notify("Skin", "Ball restored.", 2, "good")
 end })
 
+-- Raw override, for skins that aren't in Assets.Ball or IDs you find yourself.
 skP2:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "13818804314",
 	Callback = function(v) F.Skin.texture = v end })
 skP2:AddTextbox({ Text = "Mesh ID", Flag = "skin_mesh", Placeholder = "9189139113",
@@ -2712,6 +2844,7 @@ function Library:Destroy()
 	F.Ball.trail, F.Ball.traj, F.Ball.glow, F.Ball.particles = false, false, false, false
 	F.Ball.rainbow, F.Ball.landing, F.Ball.hoops = false, false, false
 	F.ESP.enabled = false
+	F.Skin.enabled = false
 	pcall(function()
 		-- player ESP owns Drawing objects and instances parented into other
 		-- characters; both outlive the ScreenGui if not removed by hand
@@ -2719,6 +2852,10 @@ function Library:Destroy()
 		F.ESP.objs = {}
 		restoreLighting()
 		if F.World.useFov and Camera then Camera.FieldOfView = 70 end
+		-- skin clones are parented into the ball and our character, so they
+		-- survive the menu unless we strip them
+		clearSkinClones()
+		restoreSkin()
 	end)
 	pcall(function()
 		-- the ball visuals parent real instances into the ball / workspace, and
