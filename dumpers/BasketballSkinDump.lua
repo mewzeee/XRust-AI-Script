@@ -68,10 +68,20 @@ end
 -- The ball's skin IS Mesh.TextureId (default 13818804314), so the skin list is
 -- really just a list of texture ids. Pull every one we can find.
 hdr("SKIN / EFFECT ASSET IDS")
+-- PERF: Assets.Effects alone is 484 models deep — walking all of it while
+-- building strings is what froze the client. Yield every so often so the frame
+-- can breathe, and stop early.
+local scanned = 0
+local function breathe()
+	scanned = scanned + 1
+	if scanned % 400 == 0 then task.wait() end
+end
+
 local function scanFor(root, label)
 	if not root then return end
 	local n = 0
 	for _, d in ipairs(root:GetDescendants()) do
+		breathe()
 		local line
 		if d:IsA("SpecialMesh") or d:IsA("MeshPart") then
 			local tex = d:IsA("SpecialMesh") and d.TextureId or d.TextureID
@@ -92,7 +102,11 @@ end
 
 if assets then
 	for _, d in ipairs(assets:GetChildren()) do
-		if looksRelevant(d.Name) and not d.Name:lower():find("emote", 1, true) then
+		-- Effects/EmoteItems/CaseModels are enormous and we already know what
+		-- they contain; skip them so this can't lock the client up again.
+		local skip = d.Name:lower():find("emote", 1, true)
+			or d.Name == "Effects" or d.Name == "CaseModels" or d.Name == "Banners"
+		if looksRelevant(d.Name) and not skip then
 			w("")
 			w("-- " .. d:GetFullName() .. " --")
 			scanFor(d, d.Name)

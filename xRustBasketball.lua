@@ -1099,14 +1099,12 @@ local function currentCourt(from)
 	local courts = courtsFolder()
 	if not courts then return nil end
 
-	local idx = LocalPlayer:GetAttribute("Court")
-	if idx ~= nil then
-		local byName = courts:FindFirstChild("Court" .. tostring(idx))
-			or courts:FindFirstChild(tostring(idx))
-		if byName then return byName end
+	-- Every court is literally named "Court" (only PracticeCourt differs), so the
+	-- attribute is an INDEX into GetChildren(), not part of a name.
+	local idx = tonumber(LocalPlayer:GetAttribute("Court"))
+	if idx then
 		local kids = courts:GetChildren()
-		local n = tonumber(idx)
-		if n and kids[n] then return kids[n] end
+		if kids[idx] then return kids[idx] end
 	end
 
 	local best, bestD = nil, math.huge
@@ -1130,11 +1128,27 @@ local function isRacked(b)
 	return p ~= nil and p.Name == "Rack"
 end
 
+-- The ball you hold is a TOOL (Workspace.<you>.Basketball), whose visible body
+-- is a BasePart inside it. A loose/racked ball is a plain Part. So: keep both —
+-- lastBallTool for anything that needs the Tool's contents (the SpecialMesh
+-- lives under there), lastBall for the part to weld to.
+local lastBallTool = nil
+
+local function bodyOf(inst)
+	if inst:IsA("BasePart") then return inst end
+	-- prefer a part that actually carries the mesh
+	for _, d in ipairs(inst:GetDescendants()) do
+		if d:IsA("BasePart") and d:FindFirstChildWhichIsA("SpecialMesh") then return d end
+	end
+	return inst:FindFirstChildWhichIsA("BasePart", true)
+end
+
 local function findBall()
 	local c = LocalPlayer.Character
 	local held = c and c:FindFirstChild("Basketball")
 	if held then
-		lastBall = (held:IsA("BasePart") and held) or held:FindFirstChildWhichIsA("BasePart")
+		lastBallTool = held
+		lastBall = bodyOf(held)
 		return lastBall
 	end
 
@@ -1332,9 +1346,39 @@ local function rageTeleport()
 	local hrp = myc.HumanoidRootPart
 	local origin = hrp.CFrame
 
-	local hoop = nearestHoop(hrp.Position)
+	-- Use the court's REAL geometry instead of a radius guess. Every court model
+	-- carries:
+	--   2PT / Home2PT / Away2PT  — the two-point zone. Outside it IS a three.
+	--   Bounds                   — the playable area.
+	--   Basket / Home/AwayBasket — the hoop.
+	-- So "outside the arc but still in bounds" stops being a guess.
+	local court = currentCourt(hrp.Position)
+	local twoPt, bounds, basket
+	if court then
+		local team = tostring(LocalPlayer:GetAttribute("Team") or "")
+		twoPt  = court:FindFirstChild(team .. "2PT") or court:FindFirstChild("2PT")
+		bounds = court:FindFirstChild("Bounds")
+		basket = court:FindFirstChild(team .. "Basket") or court:FindFirstChild("Basket")
+	end
+
+	local function boxOf(m)
+		if not m then return nil end
+		local ok, cf, size = pcall(function() return m:GetBoundingBox() end)
+		if ok and cf then return cf, size end
+		return nil
+	end
+	local function inBox(pos, cf, size, pad)
+		if not cf then return false end
+		local rel = cf:PointToObjectSpace(pos)
+		pad = pad or 0
+		return math.abs(rel.X) <= size.X / 2 + pad and math.abs(rel.Z) <= size.Z / 2 + pad
+	end
+
+	local bCf, bSize = boxOf(bounds)
+	local tCf, tSize = boxOf(twoPt)
+	local hoop = select(1, boxOf(basket)) and boxOf(basket).Position or nearestHoop(hrp.Position)
 	if not hoop then
-		Library:Notify("Rage Green", "No hoop found — falling back to Drop.", 3)
+		Library:Notify("Rage Green", "No hoop/court found — falling back to Drop.", 3)
 		return false
 	end
 
@@ -1357,31 +1401,41 @@ local function rageTeleport()
 
 	local flat = Vector3.new(1, 0, 1)
 	local best, bestScore = nil, -math.huge
-	for i = 0, 23 do
-		local a = (i / 24) * math.pi * 2
-		local dir = Vector3.new(math.cos(a), 0, math.sin(a))
-		local spot = hoop + dir * F.Green.rageRadius
-		spot = Vector3.new(spot.X, hrp.Position.Y, spot.Z)
+	-- sweep several rings out from the hoop; the first that satisfies
+	-- in-bounds AND outside-2PT AND has floor under it wins
+	for ring = 0, 5 do
+		local r = F.Green.rageRadius + ring * 4
+		for i = 0, 23 do
+			local a = (i / 24) * math.pi * 2
+			local spot = hoop + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+			spot = Vector3.new(spot.X, hrp.Position.Y, spot.Z)
 
-		local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
-		if hit then
-			-- floor must be near our own height: rules out rooftops and pits
-			local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
-			if drop <= 6 then
-				local landed = Vector3.new(spot.X, hit.Position.Y + 3, spot.Z)
-				local score
-				if defender then
-					score = ((landed - defender) * flat).Magnitude       -- as far from them as possible
-				else
-					score = -((landed - hrp.Position) * flat).Magnitude  -- else: move the least
+			-- inside the court, outside the two-point zone
+			local okBounds = (not bCf) or inBox(spot, bCf, bSize, -3)
+			local okThree  = (not tCf) or (not inBox(spot, tCf, tSize, 1))
+			if okBounds and okThree then
+				local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
+				if hit then
+					-- floor must be near our own height: rules out rooftops and pits
+					local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
+					if drop <= 6 then
+						local landed = Vector3.new(spot.X, hit.Position.Y + 3, spot.Z)
+						local score
+						if defender then
+							score = ((landed - defender) * flat).Magnitude       -- as far from them as possible
+						else
+							score = -((landed - hrp.Position) * flat).Magnitude  -- else: move the least
+						end
+						if score > bestScore then best, bestScore = landed, score end
+					end
 				end
-				if score > bestScore then best, bestScore = landed, score end
 			end
 		end
+		if best then break end   -- nearest valid ring is enough
 	end
 	if not best then
-		-- no valid on-court spot on this arc — better to do nothing than to
-		-- teleport into the void
+		-- nowhere legal on this court — do nothing rather than teleport you
+		-- out of bounds, which is what the old radius-only version did
 		return false
 	end
 
@@ -1856,10 +1910,15 @@ local function skinNames()
 	return out
 end
 
+-- The SpecialMesh lives somewhere under the Tool, not necessarily on the part
+-- we weld to — so search the Tool when there is one.
 local function ballMesh()
 	local b = findBall()
 	if not b then return nil end
-	return b:FindFirstChildWhichIsA("SpecialMesh"), b
+	local root = lastBallTool or b
+	local m = b:FindFirstChildWhichIsA("SpecialMesh")
+		or root:FindFirstChildWhichIsA("SpecialMesh", true)
+	return m, b
 end
 
 local function rememberDefaults()
@@ -1891,14 +1950,18 @@ end
 
 -- strip anything WE parented, leaving the game's own instances alone
 local function clearSkinClones()
-	local ball = findBall()
 	local targets = {}
+	local ball = findBall()
 	if ball then table.insert(targets, ball) end
+	if lastBallTool then table.insert(targets, lastBallTool) end
 	local c = LocalPlayer.Character
 	if c then table.insert(targets, c) end
 	for _, root in ipairs(targets) do
 		for _, d in ipairs(root:GetDescendants()) do
-			if d.Name == SKIN_TAG then pcall(function() d:Destroy() end) end
+			-- also catches the _ATT attachment holders we create
+			if d.Name == SKIN_TAG or d.Name == SKIN_TAG .. "_ATT" then
+				pcall(function() d:Destroy() end)
+			end
 		end
 	end
 end
@@ -1906,15 +1969,14 @@ end
 -- Clone a skin's parts and weld them on. Anchored=false + Massless + a
 -- WeldConstraint is what makes them ride the ball instead of hanging in the air
 -- or dragging its physics around.
+-- Clone a subtree onto an anchor part, preserving how it was authored.
+-- IMPORTANT: transparency is NOT touched. A skin's parts are deliberately
+-- invisible (trans=1.00) — they exist only to mount ParticleEmitters and a
+-- PointLight. Forcing them visible (an earlier build did) just draws grey boxes.
 local function attachClone(src, anchor, tagName)
 	local clone = src:Clone()
 	clone.Name = tagName
 
-	-- Keep the skin's internal layout. Every part used to be slammed to the
-	-- anchor's CFrame, which collapsed a multi-part skin into a single point
-	-- inside the ball — invisible. Auras survived that because they're usually
-	-- one part per limb, already centred on it, which is exactly why the aura
-	-- showed up and the ball skin didn't.
 	local pivot
 	local ok = pcall(function()
 		if clone:IsA("Model") then pivot = clone:GetPivot() else pivot = clone.CFrame end
@@ -1927,40 +1989,40 @@ local function attachClone(src, anchor, tagName)
 		if d:IsA("BasePart") then table.insert(parts, d) end
 	end
 	for _, p in ipairs(parts) do
-		local rel = pivot:ToObjectSpace(p.CFrame)   -- offset within the skin
+		local rel = pivot:ToObjectSpace(p.CFrame)   -- keep the internal layout
 		p.Anchored = false
 		p.CanCollide = false
 		p.CanQuery = false
 		p.CanTouch = false
 		p.Massless = true
-		p.CFrame = anchor.CFrame * rel              -- same layout, re-based onto the anchor
+		p.CFrame = anchor.CFrame * rel              -- re-based onto the anchor
 		local w = Instance.new("WeldConstraint")
 		w.Part0 = anchor
 		w.Part1 = p
 		w.Parent = p
 	end
+	-- templates often ship with emitters off; the game turns them on itself
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("ParticleEmitter") or d:IsA("Beam") then d.Enabled = true end
+	end
 	clone.Parent = anchor
 	return #parts
 end
 
--- The tree is nested — <Skin>.CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.<parts> —
--- so a plain FindFirstChild can land on an outer wrapper. Take the DEEPEST node
--- with that name that actually has BaseParts directly under it.
-local function deepestHolder(root, name)
-	local best, bestDepth = nil, -1
-	local function walk(node, depth)
-		if node.Name == name then
-			for _, k in ipairs(node:GetChildren()) do
-				if k:IsA("BasePart") then
-					if depth > bestDepth then best, bestDepth = node, depth end
-					break
-				end
-			end
-		end
-		for _, k in ipairs(node:GetChildren()) do walk(k, depth + 1) end
+-- Emitters/lights that hang loose (no part of their own) get mounted on an
+-- attachment of ours so they follow the ball.
+local function attachLoose(src, anchor, tagName)
+	local holder = anchor:FindFirstChild(tagName .. "_ATT")
+	if not holder then
+		holder = Instance.new("Attachment")
+		holder.Name = tagName .. "_ATT"
+		holder.Parent = anchor
 	end
-	walk(root, 0)
-	return best or root:FindFirstChild(name, true)
+	local c = src:Clone()
+	c.Name = tagName
+	if c:IsA("ParticleEmitter") or c:IsA("Beam") then c.Enabled = true end
+	c.Parent = (c:IsA("PointLight") or c:IsA("SpotLight")) and anchor or holder
+	return 1
 end
 
 local function applyPreset(name)
@@ -1973,41 +2035,31 @@ local function applyPreset(name)
 	if not ball then Library:Notify("Skin", "No ball nearby — grab one first.", 3); return end
 
 	local n = 0
-	-- ball meshes
-	local holder = deepestHolder(skin, "CUSTOM_SKIN_HOLDER")
-	if holder then
-		n = n + attachClone(holder, ball, SKIN_TAG)
-		-- templates in ReplicatedStorage are often left fully transparent and
-		-- faded in by the game's own script; a straight clone would then be
-		-- invisible and look like nothing happened
-		local attached = ball:FindFirstChild(SKIN_TAG)
-		if attached then
-			local allHidden = true
-			for _, d in ipairs(attached:GetDescendants()) do
-				if d:IsA("BasePart") and d.Transparency < 0.95 then allHidden = false break end
-			end
-			if attached:IsA("BasePart") and attached.Transparency < 0.95 then allHidden = false end
-			if allHidden then
-				for _, d in ipairs(attached:GetDescendants()) do
-					if d:IsA("BasePart") then d.Transparency = 0 end
-				end
-				if attached:IsA("BasePart") then attached.Transparency = 0 end
-			end
+
+	-- 1. Loose ParticleEmitters sitting directly under the skin folder. For
+	--    Conqueror these are the six "BallEffect" emitters — they ARE the skin.
+	--    (Skins like "Lightning" are nothing BUT one of these.)
+	for _, d in ipairs(skin:GetChildren()) do
+		if d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("PointLight") then
+			n = n + attachLoose(d, ball, SKIN_TAG)
 		end
 	end
 
-	-- Retexture the ball itself. CUSTOM_SKIN_HOLDER only carries the ADD-ON
-	-- geometry (Spikes/Grid/LightA...); the ball's own look is its SpecialMesh,
-	-- so if the skin ships a mesh/decal of its own, copy that across too —
-	-- otherwise you get the decorations floating around a default ball.
+	-- 2. CUSTOM_SKIN_HOLDER: a small tree of invisible anchor parts carrying
+	--    more emitters and a PointLight. Cloned whole, transparency untouched.
+	local holder = skin:FindFirstChild("CUSTOM_SKIN_HOLDER")
+	if holder then n = n + attachClone(holder, ball, SKIN_TAG) end
+
+	-- 3. Some skins DO carry real geometry (Spikes/Grid/Crown/Pumpkin) or a
+	--    texture. If one ships its own mesh, put it on the ball's SpecialMesh.
 	local m = ballMesh()
 	if m then
 		local srcMesh, srcDecal
 		for _, d in ipairs(skin:GetDescendants()) do
-			if not srcMesh and d:IsA("SpecialMesh") and d.TextureId ~= "" then srcMesh = d end
+			if not srcMesh and d:IsA("SpecialMesh") and (d.TextureId ~= "" or d.MeshId ~= "") then srcMesh = d end
 			if not srcDecal and (d:IsA("Decal") or d:IsA("Texture")) and d.Texture ~= "" then srcDecal = d end
 		end
-		if srcMesh then
+		if srcMesh and srcMesh.TextureId ~= "" then
 			pcall(function()
 				if srcMesh.MeshId ~= "" then m.MeshId = srcMesh.MeshId end
 				m.TextureId = srcMesh.TextureId
@@ -2019,15 +2071,31 @@ local function applyPreset(name)
 		end
 	end
 
-	-- character aura (optional): each child is named after the limb it welds to
+	-- Character aura. Each child of CUSTOM_AURA is a MODEL named after the limb
+	-- it belongs on (HumanoidRootPart / UpperTorso / LeftHand / RightHand), and
+	-- inside is a mix of parts, CFrameValues and loose emitters — so mount each
+	-- kind the right way rather than assuming they're all parts.
 	if F.Skin.aura then
-		local aura = skin:FindFirstChild("CUSTOM_AURA", true)
+		local aura = skin:FindFirstChild("CUSTOM_AURA")
 		local char = LocalPlayer.Character
 		if aura and char then
-			for _, limb in ipairs(aura:GetChildren()) do
-				local part = char:FindFirstChild(limb.Name)
+			for _, limbGroup in ipairs(aura:GetChildren()) do
+				local part = char:FindFirstChild(limbGroup.Name)
 				if part and part:IsA("BasePart") then
-					n = n + attachClone(limb, part, SKIN_TAG)
+					for _, item in ipairs(limbGroup:GetChildren()) do
+						if item:IsA("BasePart") or item:IsA("Model") then
+							n = n + attachClone(item, part, SKIN_TAG)
+						elseif item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("PointLight") then
+							n = n + attachLoose(item, part, SKIN_TAG)
+						elseif item:IsA("CFrameValue") then
+							-- e.g. UpperTorso.VFX: a CFrameValue holding emitters
+							for _, e in ipairs(item:GetChildren()) do
+								if e:IsA("ParticleEmitter") or e:IsA("Beam") then
+									n = n + attachLoose(e, part, SKIN_TAG)
+								end
+							end
+						end
+					end
 				end
 			end
 		end
