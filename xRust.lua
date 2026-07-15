@@ -1073,8 +1073,6 @@ aimP2:AddSlider({ Text = "Fire Rate", Flag = "aim_fire", Min = 0.02, Max = 0.5, 
 	Suffix = "s", Callback = function(v) F.Aim.fireRate = v end })
 aimP2:AddColorPicker({ Text = "Target Color", Flag = "aim_targetcolor", Default = COLORS.Red,
 	Callback = function(c) F.Aim.targetColor = c end })
-aimP2:AddLabel("Target Color + Highlight Target: whoever the aimbot is locked onto has their whole ESP snap to this colour.")
-aimP2:AddLabel("FOV lives on the AimVisuals tab, shared by every aim feature.")
 
 -- shared visibility raycast
 local function isVisible(char, pos)
@@ -1199,7 +1197,6 @@ silentP2:AddDropdown({ Text = "Priority", Flag = "silent_priority", Options = { 
 	Default = "Crosshair", Callback = function(v) F.Silent.priority = v end })
 silentP2:AddSlider({ Text = "Fire Rate", Flag = "silent_fire", Min = 0.02, Max = 0.5, Decimals = 2, Default = 0.1,
 	Suffix = "s", Callback = function(v) F.Silent.fireRate = v end })
-silentP2:AddLabel("Snaps to the target only on the shot frame - your view stays put otherwise. Uses the shared FOV. True input-synced silent aim needs game-specific hooks.")
 
 -- flick-fire: snap to the target, fire, and restore the camera in the SAME frame so the
 -- aim is invisible. No bind = always active; bind a key to gate it to when you hold it.
@@ -1251,7 +1248,6 @@ rageP2:AddSlider({ Text = "Prediction", Flag = "rage_pred", Min = 0, Max = 1, De
 	Suffix = "x", Callback = function(v) F.Rage.prediction = v end })
 rageP2:AddSlider({ Text = "Fire Rate", Flag = "rage_fire", Min = 0.02, Max = 0.5, Decimals = 2, Default = 0.05,
 	Suffix = "s", Callback = function(v) F.Rage.fireRate = v end })
-rageP2:AddLabel("Fires the instant it's on a target (triggerbot-style, no warm-up) at the fire rate.")
 
 -- picks the enemy to rage: nearest to crosshair when Only-In-FOV, otherwise nearest in 3D
 -- (so it locks people even when they're off-screen / behind you and snaps the camera onto them)
@@ -2067,7 +2063,6 @@ do
 		if on then Library:StartLoop("preview", RunService.RenderStepped, updPreview)
 		else Library:StopLoop("preview") end
 	end })
-	espP3:AddLabel("Live mirror of your ESP: only the elements you toggled render here, with your real colours, animation, bar style and tracer origin.")
 end
 
 --== World ==--
@@ -2327,7 +2322,6 @@ thudP2:AddToggle({ Text = "Wave Health Bar", Flag = "thud_barwave", Callback = f
 thudP2:AddColorPicker({ Text = "Bar Color 1", Flag = "thud_bar1", Default = COLORS.Purple, Sub = true, Callback = function(c) F.THUD.bar1 = c end })
 thudP2:AddColorPicker({ Text = "Bar Color 2", Flag = "thud_bar2", Default = COLORS.Cyan, Sub = true, Callback = function(c) F.THUD.bar2 = c end })
 thudP2:AddSlider({ Text = "Transparency", Flag = "thud_trans", Min = 0, Max = 0.9, Decimals = 2, Default = 0.05, Callback = function(v) F.THUD.trans = v end })
-thudP2:AddLabel("Drag the HUD anywhere on screen.")
 
 --== Extras: jump circle + target renderer, both TRUE 3D world objects
 --== (HandleAdornments in world space = perspective-correct, no fake ovals) ==--
@@ -2969,7 +2963,6 @@ end })
 moveP2:AddDropdown({ Text = "Crouch Mode", Flag = "aa_crouchmode", Options = { "Hold", "Tap" }, Default = "Hold",
 	Sub = true, Callback = function(v) F.AA.crouchMode = v end })
 moveP2:AddKeybind({ Text = "Crouch Key", Flag = "aa_crouchkey", Default = Enum.KeyCode.LeftControl, Sub = true })
-moveP2:AddLabel("Stack any effects: Spin / Jitter / Look Away From Target / Camera all combine. Look Pitch leans your body down about the feet (planted, no flip) - a real rotation other players SEE. Your camera, aim and movement stay normal.")
 showAaSubs(false)
 
 -- Bunny Hop: auto-jumps the instant you land. Anti-aim rewrites the root
@@ -3229,7 +3222,6 @@ camP:AddSlider({ Text = "Cam Smoothing", Flag = "cam_smooth", Min = 0, Max = 0.9
 camP:AddToggle({ Text = "Wall Check", Flag = "cam_wallcheck", Default = true, Sub = true, Callback = function(on) F.Cam.wallCheck = on end })
 camP:AddSlider({ Text = "Shoulder Offset X", Flag = "cam_offx", Min = -8, Max = 8, Decimals = 1, Default = 0, Sub = true, Callback = function(v) F.Cam.offX = v end })
 camP:AddSlider({ Text = "Height Offset Y", Flag = "cam_offy", Min = -4, Max = 8, Decimals = 1, Default = 0, Sub = true, Callback = function(v) F.Cam.offY = v end })
-camP:AddLabel("Bypass modes: PIGGYBACK rides the game's own camera - movement + aimbot work exactly like first person, just pulled back (use this first). STANDALONE is a full replacement orbit cam for stubborn games. Scroll = zoom, both modes.")
 showCamSubs(false)
 
 --== Utility ==--
@@ -3460,7 +3452,6 @@ cfgP:AddButton({ Text = "Clear Friends", Callback = function()
 	F.FriendNames = {}; Library:Notify("Friends", "Friend list cleared.", 2)
 	if Library.RefreshPlayerRows then Library.RefreshPlayerRows() end
 end })
-cfgP:AddLabel(Library.Name .. " - client-side aim/visual hub. All features are local.")
 cfgP:AddButton({ Text = "Unload", Callback = function() Library:Destroy() end })
 
 --=====================================================================
