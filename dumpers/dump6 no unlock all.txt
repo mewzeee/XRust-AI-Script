@@ -1,0 +1,33 @@
+Basketball Legends inventory dump — 2026-07-15 21:50:35 UTC
+
+=== KNIT CONTROLLERS ===
+no Controllers folder under Knit — searching for any *Controller module
+  ReplicatedStorage.Packages.ReplicaController
+  ReplicatedStorage.Packages._Index.ReplicaController.ReplicaController
+  ReplicatedStorage.Controllers.PlayerController
+  ReplicatedStorage.Controllers.GameController
+  ReplicatedStorage.Controllers.DataController
+  ReplicatedStorage.Controllers.UIController
+  ReplicatedStorage.Controllers.VisualController
+  ReplicatedStorage.Controllers.LatencyController
+  ReplicatedStorage.Controllers.InputController
+
+=== INVENTORY UI + LOCAL MODULES ===
+GUI Players.rustpro1233.PlayerGui.Main.Inventory  <Frame>
+GUI Players.rustpro1233.PlayerGui.Main.Inventory.Glow.Inventory  <Frame>
+GUI Players.rustpro1233.PlayerGui.Main.Buttons.Inventory  <ImageLabel>
+GUI Players.rustpro1233.PlayerGui.Main.Trading.Glow.Holder.Main.Bottom.Left.Inventories  <Frame>
+
+=== CANDIDATE INVENTORY TABLES (getgc) ===
+nothing matched — open the Inventory window first, then re-run
+
+=== ITEM CATALOGUE MODULES ===
+ReplicatedStorage.Packages.ReplicaService
+ReplicatedStorage.Packages._Index.ReplicaService.ReplicaService
+ReplicatedStorage.Packages._Index.ReplicaService.Experimental.ReplicaServiceListeners
+ReplicatedStorage.Modules.SharedUtil.RarityGradients
+ReplicatedStorage.Modules.Cases
+ReplicatedStorage.Modules.Items
+ReplicatedStorage.Controllers.UIController.CaseOpen
+ReplicatedStorage.Controllers.UIController.Clans.Tabs.InviteMembers
+ReplicatedStorage.Controllers.VisualController.Tools.UITools.RarityTexts

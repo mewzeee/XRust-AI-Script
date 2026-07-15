@@ -34,7 +34,9 @@ end
 w("Basketball Legends inventory dump — " .. os.date("!%Y-%m-%d %H:%M:%S") .. " UTC")
 
 -- ── 1. Knit controllers (client side — services were server-facing) ────
+-- every section is pcall-wrapped: one failure must not cost us the whole dump
 hdr("KNIT CONTROLLERS")
+pcall(function()
 local knit = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("Knit")
 local ctrls = knit and (knit:FindFirstChild("Controllers") or knit:FindFirstChild("Controller"))
 if ctrls then
@@ -50,9 +52,11 @@ else
 		end
 	end
 end
+end)
 
 -- ── 2. PlayerScripts / PlayerGui: where the inventory UI lives ─────────
 hdr("INVENTORY UI + LOCAL MODULES")
+pcall(function()
 local ps = LocalPlayer:FindFirstChild("PlayerScripts")
 if ps then
 	for _, d in ipairs(ps:GetDescendants()) do
@@ -73,87 +77,130 @@ if pg then
 		end
 	end
 end
+end)
 
 -- ── 3. THE IMPORTANT ONE: live tables in the garbage collector ─────────
 -- getgc(true) walks every live table/function. The inventory cache is a plain
 -- Lua table somewhere in there; find it by shape rather than by name.
-hdr("CANDIDATE INVENTORY TABLES (getgc)")
+--
+-- NOTE: everything below runs inside a function so an early `return` bails out
+-- of THIS section only. A bare top-level return skipped the writefile at the
+-- bottom and produced a 0-byte dump.
+hdr("REPLICAS (getgc)")
+local function scanGC()
 if typeof(getgc) ~= "function" then
 	w("executor has no getgc — cannot inspect live tables")
 else
-	local ITEM_KEYS = { "Rarity", "rarity", "ItemType", "item_type", "Type", "Name", "name", "Id", "id" }
-	local INV_KEYS  = { "Inventory", "inventory", "Items", "items", "Owned", "owned",
-		"Skins", "skins", "Effects", "effects", "Cosmetics", "cosmetics", "Equipped", "equipped" }
+	-- This game runs ReplicaService: your data is a server-owned table mirrored
+	-- to the client as a Replica object { Data=..., Class=..., Id=..., Tags=... }.
+	-- The inventory lives in Replica.Data — that is what an "unlock all" writes
+	-- to. So look for the Replica SHAPE, not for tables that happen to be big.
+	-- (The old size>3 filter is why an empty account matched nothing.)
+	local function isReplica(t)
+		return type(rawget(t, "Data")) == "table"
+			and rawget(t, "Id") ~= nil
+			and (rawget(t, "Class") ~= nil or rawget(t, "Tags") ~= nil)
+	end
 
-	local function looksLikeItem(t)
-		if type(t) ~= "table" then return false end
-		local hits = 0
-		for _, k in ipairs(ITEM_KEYS) do if rawget(t, k) ~= nil then hits = hits + 1 end end
-		return hits >= 2
+	-- print a table a couple of levels deep so the schema is readable
+	local function dump(t, indent, depth)
+		if depth > 3 then w(indent .. "...") return end
+		local n = 0
+		for k, v in pairs(t) do
+			n = n + 1
+			if n > 40 then w(indent .. "... (more)") return end
+			if type(v) == "table" then
+				local cnt = 0
+				for _ in pairs(v) do cnt = cnt + 1 end
+				w(("%s%s = <table, %d entries>"):format(indent, tostring(k), cnt))
+				dump(v, indent .. "    ", depth + 1)
+			else
+				w(("%s%s = %s  <%s>"):format(indent, tostring(k), tostring(v), type(v)))
+			end
+		end
 	end
 
 	local seen, found = {}, 0
-	local ok, gc = pcall(getgc, true)
-	if not ok then w("getgc(true) failed: " .. tostring(gc)) return end
-
+	local gc = getgc(true)
 	for _, obj in ipairs(gc) do
 		breathe()
 		if type(obj) == "table" and not seen[obj] then
 			seen[obj] = true
-
-			-- (a) a table with inventory-ish KEYS
-			for _, k in ipairs(INV_KEYS) do
-				local v = rawget(obj, k)
-				if type(v) == "table" then
-					local cnt = 0
-					for _ in pairs(v) do cnt = cnt + 1 end
-					if cnt > 3 then
-						w(("[keyed] .%s -> %d entries"):format(k, cnt))
-						-- show a couple of entries so we can see the shape
-						local shown = 0
-						for k2, v2 in pairs(v) do
-							w(("        %s = %s  <%s>"):format(tostring(k2), tostring(v2), type(v2)))
-							if type(v2) == "table" then
-								for k3, v3 in pairs(v2) do
-									w(("            .%s = %s"):format(tostring(k3), tostring(v3)))
-								end
-							end
-							shown = shown + 1
-							if shown >= 2 then break end
-						end
-						found = found + 1
-					end
-				end
-			end
-
-			-- (b) an ARRAY of item-shaped tables = the inventory list itself
-			if #obj > 3 and looksLikeItem(obj[1]) then
-				w(("[array] %d item-shaped entries"):format(#obj))
-				for i = 1, math.min(2, #obj) do
-					local parts = {}
-					for k, v in pairs(obj[i]) do table.insert(parts, tostring(k) .. "=" .. tostring(v)) end
-					table.sort(parts)
-					w("        [" .. i .. "] " .. table.concat(parts, ", "))
-				end
+			local ok, hit = pcall(isReplica, obj)
+			if ok and hit then
 				found = found + 1
+				w("")
+				w(("--- Replica #%d  Class=%s  Id=%s ---"):format(
+					found, tostring(rawget(obj, "Class")), tostring(rawget(obj, "Id"))))
+				dump(rawget(obj, "Data"), "  ", 1)
+				if found >= 6 then w("(stopping at 6 replicas)") break end
 			end
-
-			if found > 25 then w("(stopping at 25 candidates)") break end
 		end
 	end
-	if found == 0 then w("nothing matched — open the Inventory window first, then re-run") end
+	if found == 0 then
+		w("no Replica-shaped tables found.")
+		w("Data may not have replicated yet — stay in-game a few seconds and re-run.")
+	end
 end
+end
+local gcOk, gcErr = pcall(scanGC)
+if not gcOk then w("[getgc scan errored] " .. tostring(gcErr)) end
 
 -- ── 4. the catalogue: what "Rarity: ???" fails to look up ──────────────
 hdr("ITEM CATALOGUE MODULES")
-for _, d in ipairs(RS:GetDescendants()) do
-	breathe()
-	local n = d.Name:lower()
-	if d:IsA("ModuleScript") and (n:find("item") or n:find("rarit") or n:find("catalog")
-		or n:find("shop") or n:find("case") or n:find("cosmetic")) then
-		w(d:GetFullName())
+pcall(function()
+	for _, d in ipairs(RS:GetDescendants()) do
+		breathe()
+		local n = d.Name:lower()
+		if d:IsA("ModuleScript") and (n:find("item") or n:find("rarit") or n:find("catalog")
+			or n:find("shop") or n:find("case") or n:find("cosmetic")) then
+			w(d:GetFullName())
+		end
 	end
-end
+end)
+
+-- ── 5. THE CATALOGUE ITSELF ───────────────────────────────────────────
+-- Modules.Items is the master list. It's what "Rarity: ???" fails to look up,
+-- and it's the source of truth for what an inventory row must look like.
+-- require() on a shared data module just returns its table.
+hdr("ReplicatedStorage.Modules.Items")
+pcall(function()
+	local mods = RS:FindFirstChild("Modules")
+	local itemsMod = mods and mods:FindFirstChild("Items")
+	if not itemsMod then w("not found"); return end
+
+	local ok, items = pcall(require, itemsMod)
+	if not ok then w("require failed: " .. tostring(items)); return end
+	if type(items) ~= "table" then w("returned a " .. type(items)); return end
+
+	local count = 0
+	for _ in pairs(items) do count = count + 1 end
+	w(("top level: %d entries"):format(count))
+
+	-- print the first few whole, so the row schema is unambiguous
+	local shown = 0
+	for k, v in pairs(items) do
+		breathe()
+		if type(v) == "table" then
+			local parts = {}
+			for k2, v2 in pairs(v) do
+				if type(v2) == "table" then
+					local c = 0
+					for _ in pairs(v2) do c = c + 1 end
+					table.insert(parts, tostring(k2) .. "=<tbl:" .. c .. ">")
+				else
+					table.insert(parts, tostring(k2) .. "=" .. tostring(v2))
+				end
+			end
+			table.sort(parts)
+			w(("  [%s] %s"):format(tostring(k), table.concat(parts, ", ")))
+		else
+			w(("  [%s] = %s  <%s>"):format(tostring(k), tostring(v), type(v)))
+		end
+		shown = shown + 1
+		if shown >= 12 then w("  ... (+" .. (count - shown) .. " more)") break end
+	end
+end)
 
 local body = table.concat(out, "\n")
 if typeof(writefile) == "function" then
