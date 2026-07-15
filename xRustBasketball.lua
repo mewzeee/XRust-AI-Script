@@ -1303,7 +1303,15 @@ end
 --=====================================================================
 --  SHOOTING CATEGORY
 --=====================================================================
+-- Every category is declared here, up front, because a tab can only be added to
+-- a category that already exists — Ball Visuals lives in Visuals but is built
+-- long before the Visuals section, so the rail has to be defined first.
 local ShootCat = Library:AddCategory("Shooting", 1)
+local GuardCat = Library:AddCategory("Guarding", 2)
+local SkinCat  = Library:AddCategory("Skins", 3)
+local VisCat   = Library:AddCategory("Visuals", 4)
+local PLCat    = Library:AddCategory("PlayerList", 5)
+local ConfCat  = Library:AddCategory("Config", 6)
 
 --== Auto Green ==--
 local greenPage = ShootCat:AddTab("Auto Green")
@@ -1609,7 +1617,7 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 end)
 
 --== Ball Visuals ==--
-local bvPage = ShootCat:AddTab("Ball Visuals")
+local bvPage = VisCat:AddTab("Ball Visuals")
 local bvP  = bvPage:AddPanel("Ball ESP")
 local bvP2 = bvPage:AddPanel("Trail / Trajectory")
 
@@ -1927,10 +1935,9 @@ Library:StartLoop("ballvis", RunService.RenderStepped, function()
 end)
 
 --== Skin Changer ==--
-local skinPage = ShootCat:AddTab("Skin Changer")
+local skinPage = SkinCat:AddTab("Ball")
 local skP  = skinPage:AddPanel("Ball")        -- the cosmetic itself
 local skFX = skinPage:AddPanel("Effects")     -- green effect + streak
-local skP2 = skinPage:AddPanel("Advanced")    -- raw ids / tint, rarely touched
 
 -- CLIENT-SIDE ONLY. The real equip path is EconomyService.RE.Equip, which is a
 -- server call gated on what you own — so this cannot give you skins. What it
@@ -2457,12 +2464,15 @@ end
 F.GFX.play = playEffect
 
 -- ── green detector ────────────────────────────────────────────────────
--- Watch the shot meter itself rather than hooking Auto Green, so the effect
--- fires on EVERY green — including ones you hit by hand with Auto Green off.
--- The game greens a shot when the meter reads full at release, so: bar reaches
--- full, then drops away = a green just landed. A "great" never reaches full, so
--- it can't false-fire.
-local gfxArmed, gfxFullAt, gfxLastPlay = false, 0, 0
+-- Fire the moment the meter READS FULL, not on release.
+--
+-- The previous version armed at full and waited for the bar to drop back /
+-- vanish to call that "the release". That never came: the game hides the
+-- Shooting frame rather than emptying the bar, so Size.Y stayed at 1, the drop
+-- was never seen, and the arm expired silently. Full == green, so just fire
+-- there — a fraction early, and impossible to miss. A great never reaches full,
+-- so it can't false-fire.
+local gfxArmed, gfxLastPlay = false, 0
 
 local function gfxBar()
 	local pg = LocalPlayer:FindFirstChild("PlayerGui")
@@ -2472,7 +2482,7 @@ local function gfxBar()
 end
 
 local function fireGreenEffect()
-	if os.clock() - gfxLastPlay < 0.6 then return end   -- one per shot
+	if os.clock() - gfxLastPlay < 0.5 then return end   -- one per shot
 	gfxLastPlay = os.clock()
 	pcall(playEffect, F.GFX.name)
 end
@@ -2480,26 +2490,17 @@ end
 Library:StartLoop("gfxwatch", RunService.Heartbeat, function()
 	if Library.Destroyed or not F.GFX.enabled or F.GFX.name == "None" then return end
 	local bar = gfxBar()
-
-	if not bar then
-		-- meter destroyed while it was full: that was the release
-		if gfxArmed and os.clock() - gfxFullAt < 1.5 then
-			gfxArmed = false
-			fireGreenEffect()
-		end
-		return
-	end
+	if not bar then gfxArmed = false; return end
 
 	local y = bar.Size.Y.Scale
-	if y >= 0.985 then
-		gfxArmed = true
-		gfxFullAt = os.clock()
-	elseif gfxArmed and y < 0.25 and os.clock() - gfxFullAt < 1.5 then
-		-- was full, now emptied -> released on green
-		gfxArmed = false
-		fireGreenEffect()
-	elseif gfxArmed and os.clock() - gfxFullAt > 2 then
-		gfxArmed = false   -- stale, never released
+	if y >= 0.98 then
+		if not gfxArmed then
+			gfxArmed = true
+			warn(("[XRust] green detected (bar=%.3f) -> %s"):format(y, tostring(F.GFX.name)))
+			fireGreenEffect()
+		end
+	elseif y < 0.5 then
+		gfxArmed = false   -- rearm for the next shot
 	end
 end)
 
@@ -2586,32 +2587,12 @@ end })
 -- Entries in Assets.Ball are mostly EFFECTS (particles + a character aura), not
 -- textures, which is why applying one never retextured the ball. Setting the id
 -- here does. Equip a skin you own and hit "Copy Current IDs" to harvest more.
-skP2:AddDropdown({ Text = "Known Texture", Flag = "skin_texpreset",
-	Options = { "Custom", "Default (14554890555)", "Alt (102849528147022)", "Rack (13818804314)" },
-	Default = "Custom", Callback = function(v)
-		local id = v:match("%((%d+)%)")
-		if id then
-			F.Skin.texture = id
-			local o = Library.Options["skin_tex"]
-			if o and o.Set then o:Set(id) end
-		end
-	end })
-skP2:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "14554890555",
+-- The raw-id panel is gone: the Ball dropdown covers all 452 skins by name, so
+-- typing texture ids by hand was only ever a workaround for not having the
+-- catalogue. The one genuinely useful leftover is the manual override, kept on
+-- the Ball panel for anything the catalogue doesn't list.
+skP:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "override",
 	Callback = function(v) F.Skin.texture = v end })
-skP2:AddTextbox({ Text = "Mesh ID", Flag = "skin_mesh", Placeholder = "14536927547",
-	Callback = function(v) F.Skin.mesh = v end })
--- Harvest loop: equip a skin in the game's own menu, hold the ball, press this.
--- It reports the id the game just applied, which is that skin's texture.
-skP2:AddButton({ Text = "Copy Current IDs", Callback = function()
-	local m = ballMesh()
-	if not m then Library:Notify("Skin", "Hold a ball first.", 3); return end
-	local tex = tostring(m.TextureId):match("(%d+)") or "?"
-	local msh = tostring(m.MeshId):match("(%d+)") or "?"
-	local s = ("TextureId = %s\nMeshId = %s"):format(tex, msh)
-	if typeof(setclipboard) == "function" then pcall(setclipboard, s) end
-	warn("[XRust] ball ids -> " .. s:gsub("\n", "  "))
-	Library:Notify("Skin", "Texture " .. tex .. " copied.", 4, "good")
-end })
 
 local skinBall = nil
 Library:StartLoop("skin", RunService.Heartbeat, function()
@@ -2636,8 +2617,6 @@ Library:StartLoop("skin", RunService.Heartbeat, function()
 	-- TextureId whenever it hands you a fresh ball.
 	local tex = skinTexture(F.Skin.skin) or texUrl(F.Skin.texture)
 	if tex and m.TextureId ~= tex then pcall(function() m.TextureId = tex end) end
-	local msh = texUrl(F.Skin.mesh)
-	if msh and m.MeshId ~= msh then pcall(function() m.MeshId = msh end) end
 
 	if F.Skin.useColor and b.Color ~= F.Skin.color then
 		pcall(function() b.Color = F.Skin.color end)
@@ -2649,7 +2628,7 @@ end)
 --=====================================================================
 --  GUARDING CATEGORY
 --=====================================================================
-local GuardCat = Library:AddCategory("Guarding", 2)
+-- (GuardCat declared at the top)
 local guardPage = GuardCat:AddTab("Auto Guard")
 local guardP  = guardPage:AddPanel("Auto Guard")
 local guardP2 = guardPage:AddPanel("Settings")
@@ -2864,7 +2843,7 @@ end)
 --=====================================================================
 --  VISUALS CATEGORY
 --=====================================================================
-local VisCat = Library:AddCategory("Visuals", 3)
+-- (VisCat declared at the top)
 
 --== Player ESP ==--
 local espPage = VisCat:AddTab("Player ESP")
@@ -3136,7 +3115,7 @@ end)
 --=====================================================================
 --  CONFIG CATEGORY
 --=====================================================================
-local ConfCat = Library:AddCategory("Config", 5)
+-- (ConfCat declared at the top)
 local confPage = ConfCat:AddTab("Interface")
 local uiP  = confPage:AddPanel("Interface")
 local cfgP = confPage:AddPanel("Config / About")
@@ -3289,7 +3268,7 @@ cfgP:AddButton({ Text = "Unload", Callback = function() Library:Destroy() end })
 --=====================================================================
 --  PLAYERLIST CATEGORY
 --=====================================================================
-local PLCat = Library:AddCategory("PlayerList", 4)
+-- (PLCat declared at the top)
 local plPage = PLCat:AddTab("Players")
 local plP = plPage:AddPanel("Players In Server")
 local plScroll = plP:Scroll()
