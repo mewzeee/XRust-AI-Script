@@ -123,7 +123,10 @@ local ballFolder = assets and assets:FindFirstChild("Ball")
 if not ballFolder then
 	w("no Assets.Ball")
 else
-	local want = { "Conqueror", ballFolder:GetChildren()[1] and ballFolder:GetChildren()[1].Name }
+	-- Skins/effects actually owned on this account, so the template can be
+	-- compared directly against what the game builds on the ball below.
+	local want = { "Helios", "Space Lightning", "SpaceLightning", "Rift", "Candy Cane", "CandyCane",
+		"North Pole", "NorthPole", "Ornament Light", "OrnamentLight", "Default", "Conqueror" }
 	for _, nm in ipairs(want) do
 		local skin = nm and ballFolder:FindFirstChild(nm)
 		if skin then
@@ -131,6 +134,7 @@ else
 			w("### " .. skin:GetFullName() .. "  <" .. skin.ClassName .. ">")
 			local base = #skin:GetFullName()
 			for _, d in ipairs(skin:GetDescendants()) do
+				breathe()
 				local rel = d:GetFullName():sub(base + 2)
 				local extra = ""
 				if d:IsA("BasePart") then
@@ -231,25 +235,68 @@ local function findBall()
 	end
 end
 
+-- THIS IS THE GROUND TRUTH. With an effect equipped and the ball in hand, this
+-- shows what the GAME ITSELF parents onto the ball — which beats inferring it
+-- from the templates. Print the full relative path of every node (the old
+-- version printed bare names, so there was no way to tell depth or parentage)
+-- plus the properties that decide whether a clone of it would render.
 local ball = findBall()
 if not ball then
-	w("no basketball found — grab one and run again")
+	w("no basketball found — HOLD a ball and run again")
 else
 	w("ball: " .. path(ball) .. "  <" .. ball.ClassName .. ">")
+	local base = #ball:GetFullName()
 	if ball:IsA("BasePart") then
 		w(("  Color=%s  Material=%s  Transparency=%.2f"):format(tostring(ball.Color), tostring(ball.Material), ball.Transparency))
 	end
 	dumpAttrs(ball, "Ball")
 	for _, d in ipairs(ball:GetDescendants()) do
+		breathe()
+		local rel = d:GetFullName():sub(base + 2)
 		local extra = ""
-		if d:IsA("SpecialMesh") or d:IsA("MeshPart") then
-			extra = "  MeshId=" .. tostring(d.MeshId) .. "  TextureId=" .. tostring(d.TextureId or d.TextureID)
+		if d:IsA("BasePart") then
+			extra = (" size=%s trans=%.2f anch=%s"):format(tostring(d.Size), d.Transparency, tostring(d.Anchored))
+		elseif d:IsA("SpecialMesh") then
+			extra = ("  MeshId=%s  TextureId=%s  Scale=%s"):format(tostring(d.MeshId), tostring(d.TextureId), tostring(d.Scale))
+		elseif d:IsA("MeshPart") then
+			extra = ("  MeshId=%s  TextureID=%s"):format(tostring(d.MeshId), tostring(d.TextureID))
 		elseif d:IsA("Decal") or d:IsA("Texture") then
 			extra = "  Texture=" .. tostring(d.Texture)
 		elseif d:IsA("ParticleEmitter") then
-			extra = "  Texture=" .. tostring(d.Texture)
+			extra = ("  enabled=%s  rate=%s  tex=%s"):format(tostring(d.Enabled), tostring(d.Rate), tostring(d.Texture))
+		elseif d:IsA("Beam") then
+			extra = "  enabled=" .. tostring(d.Enabled)
+		elseif d:IsA("PointLight") or d:IsA("SpotLight") then
+			extra = ("  enabled=%s  range=%s"):format(tostring(d.Enabled), tostring(d.Range))
+		elseif d:IsA("ValueBase") then
+			extra = " = " .. tostring(d.Value)
 		end
-		w(("  %-30s <%s>%s"):format(d.Name, d.ClassName, extra))
+		w(("  %-52s <%-16s>%s"):format(rel, d.ClassName, extra))
+	end
+end
+
+-- ── what's on the character (auras land here) ─────────────────────────
+hdr("CHARACTER — non-default children (aura lands here)")
+local char = LocalPlayer.Character
+if not char then
+	w("no character")
+else
+	local RIG = { Head=1, UpperTorso=1, LowerTorso=1, HumanoidRootPart=1, LeftHand=1, RightHand=1,
+		LeftFoot=1, RightFoot=1, LeftLowerArm=1, LeftUpperArm=1, RightLowerArm=1, RightUpperArm=1,
+		LeftLowerLeg=1, LeftUpperLeg=1, RightLowerLeg=1, RightUpperLeg=1, Humanoid=1, Animate=1,
+		HumanoidDescription=1, Shirt=1, Pants=1, Body=1, Torso=1 }
+	for _, limb in ipairs(char:GetChildren()) do
+		if limb:IsA("BasePart") then
+			for _, d in ipairs(limb:GetDescendants()) do
+				breathe()
+				if d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("PointLight")
+					or (d:IsA("BasePart") and not RIG[d.Name]) then
+					w(("%-22s %-30s <%s>"):format(limb.Name, d.Name, d.ClassName))
+				end
+			end
+		elseif not RIG[limb.Name] then
+			w(("(child) %-38s <%s>"):format(limb.Name, limb.ClassName))
+		end
 	end
 end
 
