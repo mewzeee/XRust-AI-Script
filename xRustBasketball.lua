@@ -1471,7 +1471,14 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 							task.wait()
 						end
 					end)
-					if green then playGreenSound() end
+					if green then
+						playGreenSound()
+						-- Skin Changer is defined further down, so go through F
+						-- (resolved at runtime) rather than an upvalue
+						if F.GFX and F.GFX.enabled and F.GFX.play then
+							pcall(F.GFX.play, F.GFX.name)
+						end
+					end
 				end
 			end
 			task.wait()
@@ -1889,18 +1896,31 @@ end
 local function attachClone(src, anchor, tagName)
 	local clone = src:Clone()
 	clone.Name = tagName
+
+	-- Keep the skin's internal layout. Every part used to be slammed to the
+	-- anchor's CFrame, which collapsed a multi-part skin into a single point
+	-- inside the ball — invisible. Auras survived that because they're usually
+	-- one part per limb, already centred on it, which is exactly why the aura
+	-- showed up and the ball skin didn't.
+	local pivot
+	local ok = pcall(function()
+		if clone:IsA("Model") then pivot = clone:GetPivot() else pivot = clone.CFrame end
+	end)
+	if not ok or not pivot then pivot = anchor.CFrame end
+
 	local parts = {}
 	if clone:IsA("BasePart") then table.insert(parts, clone) end
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("BasePart") then table.insert(parts, d) end
 	end
 	for _, p in ipairs(parts) do
+		local rel = pivot:ToObjectSpace(p.CFrame)   -- offset within the skin
 		p.Anchored = false
 		p.CanCollide = false
 		p.CanQuery = false
 		p.CanTouch = false
 		p.Massless = true
-		p.CFrame = anchor.CFrame
+		p.CFrame = anchor.CFrame * rel              -- same layout, re-based onto the anchor
 		local w = Instance.new("WeldConstraint")
 		w.Part0 = anchor
 		w.Part1 = p
@@ -1923,6 +1943,29 @@ local function applyPreset(name)
 	-- ball meshes
 	local holder = skin:FindFirstChild("CUSTOM_SKIN_HOLDER", true)
 	if holder then n = n + attachClone(holder, ball, SKIN_TAG) end
+
+	-- Retexture the ball itself. CUSTOM_SKIN_HOLDER only carries the ADD-ON
+	-- geometry (Spikes/Grid/LightA...); the ball's own look is its SpecialMesh,
+	-- so if the skin ships a mesh/decal of its own, copy that across too —
+	-- otherwise you get the decorations floating around a default ball.
+	local m = ballMesh()
+	if m then
+		local srcMesh, srcDecal
+		for _, d in ipairs(skin:GetDescendants()) do
+			if not srcMesh and d:IsA("SpecialMesh") and d.TextureId ~= "" then srcMesh = d end
+			if not srcDecal and (d:IsA("Decal") or d:IsA("Texture")) and d.Texture ~= "" then srcDecal = d end
+		end
+		if srcMesh then
+			pcall(function()
+				if srcMesh.MeshId ~= "" then m.MeshId = srcMesh.MeshId end
+				m.TextureId = srcMesh.TextureId
+			end)
+			n = n + 1
+		elseif srcDecal then
+			pcall(function() m.TextureId = srcDecal.Texture end)
+			n = n + 1
+		end
+	end
 
 	-- character aura (optional): each child is named after the limb it welds to
 	if F.Skin.aura then
@@ -1990,6 +2033,80 @@ skP:AddDropdown({ Text = "Material", Flag = "skin_mat",
 skP:AddButton({ Text = "Reset To Default", Callback = function()
 	restoreSkin()
 	Library:Notify("Skin", "Ball restored.", 2, "good")
+end })
+
+-- ── Green Effect ──────────────────────────────────────────────────────
+-- The game fires these through VisualService.RE.Effects when you green, and
+-- the templates are all sitting in ReplicatedStorage.Assets.Effects (484 of
+-- them). We can't make the SERVER play one you don't own, but we can clone the
+-- template and play it on ourselves the moment Auto Green lands — so you see
+-- any effect you like on every green. Local only, same as the skin.
+F.GFX = { enabled = false, name = "None", life = 4, live = {} }
+
+local function effectFolder()
+	local a = RS:FindFirstChild("Assets")
+	return a and a:FindFirstChild("Effects")
+end
+local function effectNames()
+	local out = { "None" }
+	local f = effectFolder()
+	if f then
+		for _, d in ipairs(f:GetChildren()) do table.insert(out, d.Name) end
+		table.sort(out)
+	end
+	return out
+end
+
+-- Play an effect template at our character. Templates are built to be dropped
+-- in and left alone: the particles emit on their own, so anchoring everything
+-- and deleting it after `life` is enough. Anything not anchored would fall.
+local function playEffect(name)
+	if name == "None" then return end
+	local f = effectFolder()
+	local tpl = f and f:FindFirstChild(name)
+	local myc = getChar()
+	if not (tpl and myc) then return end
+
+	local clone = tpl:Clone()
+	clone.Name = SKIN_TAG .. "_FX"
+	local base = myc.HumanoidRootPart.CFrame
+	local pivotOK, pivot = pcall(function()
+		return clone:IsA("Model") and clone:GetPivot() or clone.CFrame
+	end)
+	if not pivotOK or not pivot then pivot = base end
+
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local rel = pivot:ToObjectSpace(d.CFrame)
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CFrame = base * rel
+		end
+	end
+	if clone:IsA("BasePart") then clone.Anchored = true; clone.CFrame = base end
+	clone.Parent = Workspace
+	table.insert(F.GFX.live, clone)
+
+	task.delay(F.GFX.life, function()
+		pcall(function() clone:Destroy() end)
+		for i, v in ipairs(F.GFX.live) do
+			if v == clone then table.remove(F.GFX.live, i); break end
+		end
+	end)
+end
+
+F.GFX.play = playEffect   -- Auto Green calls this via F, since it's defined above
+
+skP2:AddToggle({ Text = "Custom Green Effect", Flag = "gfx_enabled", Callback = function(on) F.GFX.enabled = on end })
+skP2:AddDropdown({ Text = "Green Effect", Flag = "gfx_name", Options = effectNames(), Default = "None",
+	Callback = function(v) F.GFX.name = v end })
+skP2:AddSlider({ Text = "Effect Lifetime", Flag = "gfx_life", Min = 1, Max = 10, Decimals = 1, Default = 4,
+	Suffix = "s", Callback = function(v) F.GFX.life = v end })
+skP2:AddButton({ Text = "Preview", Callback = function()
+	if F.GFX.name == "None" then Library:Notify("Effect", "Pick one first.", 2); return end
+	playEffect(F.GFX.name)
 end })
 
 -- Raw override, for skins that aren't in Assets.Ball or IDs you find yourself.
@@ -2513,7 +2630,7 @@ end)
 --=====================================================================
 --  CONFIG CATEGORY
 --=====================================================================
-local ConfCat = Library:AddCategory("Config", 4)
+local ConfCat = Library:AddCategory("Config", 5)
 local confPage = ConfCat:AddTab("Interface")
 local uiP  = confPage:AddPanel("Interface")
 local cfgP = confPage:AddPanel("Config / About")
@@ -2666,7 +2783,7 @@ cfgP:AddButton({ Text = "Unload", Callback = function() Library:Destroy() end })
 --=====================================================================
 --  PLAYERLIST CATEGORY
 --=====================================================================
-local PLCat = Library:AddCategory("PlayerList", 5)
+local PLCat = Library:AddCategory("PlayerList", 4)
 local plPage = PLCat:AddTab("Players")
 local plP = plPage:AddPanel("Players In Server")
 local plScroll = plP:Scroll()
@@ -2852,10 +2969,13 @@ function Library:Destroy()
 		F.ESP.objs = {}
 		restoreLighting()
 		if F.World.useFov and Camera then Camera.FieldOfView = 70 end
-		-- skin clones are parented into the ball and our character, so they
-		-- survive the menu unless we strip them
+		-- skin clones are parented into the ball and our character, and green
+		-- effects into workspace — all of it survives the menu unless stripped
 		clearSkinClones()
 		restoreSkin()
+		F.GFX.enabled = false
+		for _, fx in ipairs(F.GFX.live) do pcall(function() fx:Destroy() end) end
+		F.GFX.live = {}
 	end)
 	pcall(function()
 		-- the ball visuals parent real instances into the ball / workspace, and
