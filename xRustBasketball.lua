@@ -2333,23 +2333,77 @@ local function playEffect(name)
 	local clone = tpl:Clone()
 	clone.Name = SKIN_TAG .. "_FX"
 	local base = myc.HumanoidRootPart.CFrame
-	local pivotOK, pivot = pcall(function()
-		return clone:IsA("Model") and clone:GetPivot() or clone.CFrame
-	end)
-	if not pivotOK or not pivot then pivot = base end
 
-	for _, d in ipairs(clone:GetDescendants()) do
-		if d:IsA("BasePart") then
-			local rel = pivot:ToObjectSpace(d.CFrame)
-			d.Anchored = true
-			d.CanCollide = false
-			d.CanQuery = false
-			d.CanTouch = false
-			d.CFrame = base * rel
+	-- Assets.Effects entries are FOLDERS — no CFrame, no GetPivot. The old code
+	-- did `clone:IsA("Model") and clone:GetPivot() or clone.CFrame`, which throws
+	-- on a Folder; the pcall swallowed it and pivot fell back to `base`. Then
+	--     base * base:ToObjectSpace(part.CFrame)  ==  part.CFrame
+	-- so every part stayed at its ReplicatedStorage coordinates. The emitters
+	-- were enabled and firing the whole time — thousands of studs from you.
+	-- Derive the origin from the PARTS instead, which works for any container.
+	local origin
+	do
+		if clone:IsA("BasePart") then
+			origin = clone.CFrame
+		elseif clone:IsA("Model") then
+			local ok, cf = pcall(function() return clone:GetPivot() end)
+			if ok and cf then origin = cf end
+		end
+		if not origin then
+			local sum, n = Vector3.zero, 0
+			for _, d in ipairs(clone:GetDescendants()) do
+				if d:IsA("BasePart") then sum = sum + d.Position; n = n + 1 end
+			end
+			if n > 0 then origin = CFrame.new(sum / n) end
 		end
 	end
-	if clone:IsA("BasePart") then clone.Anchored = true; clone.CFrame = base end
+
+	local parts = {}
+	if clone:IsA("BasePart") then table.insert(parts, clone) end
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BasePart") then table.insert(parts, d) end
+	end
+	for _, p in ipairs(parts) do
+		p.Anchored = true
+		p.CanCollide, p.CanQuery, p.CanTouch = false, false, false
+		if origin then p.CFrame = base * origin:ToObjectSpace(p.CFrame) end
+	end
+
 	clone.Parent = Workspace
+
+	-- An emitter with no BasePart above it has no position and cannot render —
+	-- that's BlueFire's "7 emitters, 0 parts". Give those a host at the player.
+	local host
+	local function getHost()
+		if host and host.Parent then return host end
+		host = Instance.new("Part")
+		host.Name = "Host"
+		host.Anchored = true
+		host.CanCollide, host.CanQuery, host.CanTouch = false, false, false
+		host.Transparency = 1
+		host.Size = Vector3.new(0.2, 0.2, 0.2)
+		host.CFrame = base
+		host.Parent = clone
+		return host
+	end
+	local function positioned(inst)
+		local p = inst.Parent
+		while p and p ~= clone do
+			if p:IsA("BasePart") then return true end
+			p = p.Parent
+		end
+		return false
+	end
+	-- collect first: reparenting while walking GetDescendants is asking for it
+	local orphans = {}
+	for _, d in ipairs(clone:GetDescendants()) do
+		if (d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail")) and not positioned(d) then
+			table.insert(orphans, d)
+		end
+	end
+	for _, d in ipairs(orphans) do
+		if d:IsA("ParticleEmitter") then pcall(function() d.Parent = getHost() end) end
+	end
 
 	-- Templates ship with their emitters DISABLED — the game's own effect script
 	-- turns them on. Without this the clone is a correctly-placed, completely
@@ -2359,11 +2413,11 @@ local function playEffect(name)
 	local emitted = 0
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("ParticleEmitter") then
-			if d.Rate and d.Rate > 0 then
-				d.Enabled = true
-			else
-				pcall(function() d:Emit(math.max(1, math.floor(d.Lifetime.Max * 20))) end)
-			end
+			-- Enable AND burst. The game plays these as one-shots, so a Rate>0
+			-- emitter left to trickle looks like nothing happened; :Emit gives
+			-- the visible pop, Enabled carries the tail.
+			d.Enabled = true
+			pcall(function() d:Emit(math.clamp(math.floor((d.Rate > 0 and d.Rate or 30) * 0.5), 5, 80)) end)
 			emitted = emitted + 1
 		elseif d:IsA("Beam") or d:IsA("Trail") then
 			d.Enabled = true
@@ -2382,8 +2436,10 @@ local function playEffect(name)
 		if d:IsA("BasePart") then partCount = partCount + 1 end
 	end
 	if clone:IsA("BasePart") then partCount = partCount + 1 end
-	warn(("[XRust] effect '%s': %d emitters, %d parts, at %s"):format(
-		name, emitted, partCount, tostring(base.Position)))
+	warn(("[XRust] effect '%s': %d emitters, %d parts | origin=%s -> %s | class=%s"):format(
+		name, emitted, partCount,
+		origin and tostring(origin.Position) or "NONE (parts left where they were)",
+		tostring(base.Position), tpl.ClassName))
 	if emitted == 0 and partCount == 0 then
 		Library:Notify("Effect", "'" .. name .. "' cloned but is empty.", 4)
 	else
