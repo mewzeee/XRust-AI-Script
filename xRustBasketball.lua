@@ -1035,6 +1035,36 @@ local function trackPos(flag, holder)
 	end)
 end
 
+--=====================================================================
+--  BALL  (shared: everything below needs to find the basketball)
+--=====================================================================
+-- The ball is parented to the character while held, and loose in workspace
+-- otherwise. Cache the last one we saw so ESP/trail survive the hand-off.
+local lastBall = nil
+local function findBall()
+	local c = LocalPlayer.Character
+	local held = c and c:FindFirstChild("Basketball")
+	if held then
+		lastBall = (held:IsA("BasePart") and held) or held:FindFirstChildWhichIsA("BasePart")
+		return lastBall
+	end
+	-- loose ball: nearest thing named Basketball in workspace
+	local best, bestD = nil, math.huge
+	local myc = getChar()
+	local myPos = myc and myc.HumanoidRootPart.Position or Vector3.zero
+	for _, d in ipairs(Workspace:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name == "Basketball" then
+			local dist = (d.Position - myPos).Magnitude
+			if dist < bestD then best, bestD = d, dist end
+		end
+	end
+	if best then lastBall = best end
+	return best
+end
+local function ballHeld()
+	local c = LocalPlayer.Character
+	return c and c:FindFirstChild("Basketball") ~= nil
+end
 
 --=====================================================================
 --  SHOOTING CATEGORY
@@ -1046,12 +1076,15 @@ local greenPage = ShootCat:AddTab("Auto Green")
 local greenP  = greenPage:AddPanel("Auto Green")
 local greenP2 = greenPage:AddPanel("Settings")
 
--- The game draws its own shot meter at PlayerGui.Visual.Shooting.Bar and greens
--- the shot when the bar is released at full. So: while the shoot key is held and
--- the bar has climbed past `release`, tween it the rest of the way and pin it at
--- full. `tween` is how long that last hop takes - too fast reads as a snap, too
--- slow and the window is missed.
-F.Green = { enabled = false, release = 0.9, tween = 0.045, key = Enum.KeyCode.E, requireBall = true }
+-- The game greens a shot when its meter (PlayerGui.Visual.Shooting.Bar) is
+-- released at full. Two ways to get there:
+--   Snap  - wait until the bar passes `release`, then jump it to full. Fast,
+--           but the bar visibly teleports.
+--   Ramp  - from the moment the bar starts moving, drive it up ourselves at a
+--           steady rate so it *climbs* to full. Looks like a real shot.
+F.Green = { enabled = false, mode = "Ramp", release = 0.9, tween = 0.045, rampTime = 0.35,
+	key = Enum.KeyCode.E, requireBall = true, jitter = 0, sound = false,
+	rage = false, rageDepth = 3, rageHold = 0.6 }
 
 local function shootingBar()
 	local pg = LocalPlayer:FindFirstChild("PlayerGui")
@@ -1060,29 +1093,38 @@ local function shootingBar()
 	return shooting and shooting:FindFirstChild("Bar")
 end
 
-local function hasBall()
-	local c = LocalPlayer.Character
-	return c and c:FindFirstChild("Basketball") ~= nil
-end
-
 greenP:AddToggle({ Text = "Enabled", Flag = "green_enabled", Callback = function(on)
 	F.Green.enabled = on
 	if on and not shootingBar() then
-		Library:Notify("Auto Green", "Shot meter not found - are you in a match?", 4)
+		Library:Notify("Auto Green", "Shot meter not found — are you in a match?", 4)
 	end
 end })
 greenP:AddToggle({ Text = "Require Basketball", Flag = "green_ball", Callback = function(on) F.Green.requireBall = on end })
+greenP:AddToggle({ Text = "Rage Green", Flag = "green_rage", Callback = function(on)
+	F.Green.rage = on
+	if on then Library:Notify("Rage Green", "Drops you through the floor on release so nobody can contest.", 5, "good") end
+end })
+greenP:AddToggle({ Text = "Green Sound", Flag = "green_sound", Callback = function(on) F.Green.sound = on end })
 
+greenP2:AddDropdown({ Text = "Mode", Flag = "green_mode", Options = { "Ramp", "Snap" }, Default = "Ramp",
+	Callback = function(v) F.Green.mode = v end })
+greenP2:AddSlider({ Text = "Ramp Time", Flag = "green_ramp", Min = 0.1, Max = 1.5, Decimals = 2, Default = 0.35,
+	Suffix = "s", Callback = function(v) F.Green.rampTime = v end })
 greenP2:AddSlider({ Text = "Release Point", Flag = "green_release", Min = 0.5, Max = 0.99, Decimals = 2, Default = 0.9,
 	Callback = function(v) F.Green.release = v end })
-greenP2:AddSlider({ Text = "Tween Time", Flag = "green_tween", Min = 0.01, Max = 0.2, Decimals = 3, Default = 0.045,
+greenP2:AddSlider({ Text = "Snap Time", Flag = "green_tween", Min = 0.01, Max = 0.2, Decimals = 3, Default = 0.045,
 	Suffix = "s", Callback = function(v) F.Green.tween = v end })
+greenP2:AddSlider({ Text = "Jitter", Flag = "green_jitter", Min = 0, Max = 0.05, Decimals = 3, Default = 0,
+	Callback = function(v) F.Green.jitter = v end })
+greenP2:AddSlider({ Text = "Rage Depth", Flag = "green_depth", Min = 1, Max = 8, Decimals = 1, Default = 3,
+	Suffix = "m", Callback = function(v) F.Green.rageDepth = v end })
+greenP2:AddSlider({ Text = "Rage Hold", Flag = "green_hold", Min = 0.2, Max = 2, Decimals = 2, Default = 0.6,
+	Suffix = "s", Callback = function(v) F.Green.rageHold = v end })
 greenP2:AddDropdown({ Text = "Shoot Key", Flag = "green_key", Options = { "E", "Q", "F", "R", "MouseButton1" },
 	Default = "E", Callback = function(v)
 		F.Green.key = (v == "MouseButton1") and Enum.UserInputType.MouseButton1 or Enum.KeyCode[v]
 	end })
 
-local greenBusy = false
 local function greenKeyDown()
 	local k = F.Green.key
 	if typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType then
@@ -1091,27 +1133,256 @@ local function greenKeyDown()
 	return UserInputService:IsKeyDown(k)
 end
 
+local function playGreenSound()
+	if not F.Green.sound then return end
+	pcall(function()
+		local s = Instance.new("Sound")
+		s.SoundId = "rbxassetid://6042053626"
+		s.Volume = 0.6
+		s.Parent = Workspace
+		s:Play()
+		task.delay(2, function() s:Destroy() end)
+	end)
+end
+
+-- Rage Green: sink the character straight down for the duration of the shot.
+-- Only a few studs - deep enough that no defender's hitbox reaches you, shallow
+-- enough that the game doesn't count it as a void fall and reset you. The
+-- HumanoidRootPart is put back exactly where it started.
+local function rageDrop()
+	local myc = getChar()
+	if not myc then return end
+	local hrp = myc.HumanoidRootPart
+	local origin = hrp.CFrame
+	local hum = myc:FindFirstChildOfClass("Humanoid")
+	local parts = {}
+	for _, p in ipairs(myc:GetDescendants()) do
+		if p:IsA("BasePart") and p.CanCollide then
+			table.insert(parts, p); p.CanCollide = false
+		end
+	end
+	if hum then hum.PlatformStand = true end
+	hrp.CFrame = origin - Vector3.new(0, F.Green.rageDepth, 0)
+	hrp.AssemblyLinearVelocity = Vector3.zero
+
+	task.delay(F.Green.rageHold, function()
+		pcall(function()
+			if hrp and hrp.Parent then
+				hrp.CFrame = origin
+				hrp.AssemblyLinearVelocity = Vector3.zero
+			end
+			for _, p in ipairs(parts) do if p and p.Parent then p.CanCollide = true end end
+			if hum and hum.Parent then hum.PlatformStand = false end
+		end)
+	end)
+end
+
+local greenBusy = false
 Library:Connect(UserInputService.InputBegan, function(input, gpe)
 	if gpe or not F.Green.enabled or Library.Destroyed or greenBusy then return end
 	local k = F.Green.key
 	local match = (typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType)
 		and (input.UserInputType == k) or (input.KeyCode == k)
 	if not match then return end
-	if F.Green.requireBall and not hasBall() then return end
+	if F.Green.requireBall and not ballHeld() then return end
 
 	greenBusy = true
 	task.spawn(function()
+		local dropped = false
+		local rampStart = nil
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
-			if bar and bar.Size.Y.Scale > F.Green.release then
-				bar:TweenSize(UDim2.new(1, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Linear, F.Green.tween, true)
-				task.wait()
-				if bar and bar.Parent then bar.Size = UDim2.new(1, 0, 1, 0) end
+			if bar then
+				local y = bar.Size.Y.Scale
+				if F.Green.rage and not dropped and y > 0.15 then
+					dropped = true
+					pcall(rageDrop)
+				end
+				if F.Green.mode == "Ramp" then
+					-- climb the bar ourselves at a constant rate once it starts
+					if y > 0.02 then
+						rampStart = rampStart or os.clock()
+						local a = math.clamp((os.clock() - rampStart) / math.max(0.05, F.Green.rampTime), 0, 1)
+						local target = math.clamp(y + (1 - y) * a, y, 1)
+						if F.Green.jitter > 0 then
+							target = math.clamp(target - math.random() * F.Green.jitter, 0, 1)
+						end
+						bar.Size = UDim2.new(1, 0, target, 0)
+						if a >= 1 then
+							bar.Size = UDim2.new(1, 0, 1, 0)
+							playGreenSound()
+						end
+					end
+				else
+					if y > F.Green.release then
+						bar:TweenSize(UDim2.new(1, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Linear, F.Green.tween, true)
+						task.wait()
+						if bar and bar.Parent then bar.Size = UDim2.new(1, 0, 1, 0) end
+						playGreenSound()
+					end
+				end
 			end
 			task.wait()
 		end
 		greenBusy = false
 	end)
+end)
+
+--== Ball Visuals ==--
+local bvPage = ShootCat:AddTab("Ball Visuals")
+local bvP  = bvPage:AddPanel("Ball ESP")
+local bvP2 = bvPage:AddPanel("Trail / Trajectory")
+
+F.Ball = { esp = false, espColor = COLORS.Orange or COLORS.Red, chams = false, tracer = false, dist = false,
+	trail = false, trailColor = COLORS.Orange or COLORS.Red, trailLen = 1.2,
+	traj = false, trajColor = COLORS.Cyan, trajSteps = 40, trajTime = 1.6,
+	hl = nil, bb = nil, distLbl = nil, trailObj = nil, trajParts = {} }
+
+bvP:AddToggle({ Text = "Ball ESP", Flag = "ball_esp", Callback = function(on) F.Ball.esp = on end })
+bvP:AddToggle({ Text = "Ball Chams", Flag = "ball_chams", Callback = function(on) F.Ball.chams = on end })
+bvP:AddToggle({ Text = "Ball Tracer", Flag = "ball_tracer", Callback = function(on) F.Ball.tracer = on end })
+bvP:AddToggle({ Text = "Ball Distance", Flag = "ball_dist", Callback = function(on) F.Ball.dist = on end })
+bvP:AddColorPicker({ Text = "ESP Color", Flag = "ball_espcol", Default = COLORS.Orange or COLORS.Red,
+	Callback = function(c) F.Ball.espColor = c end })
+
+bvP2:AddToggle({ Text = "Shot Trail", Flag = "ball_trail", Callback = function(on) F.Ball.trail = on end })
+bvP2:AddSlider({ Text = "Trail Length", Flag = "ball_traillen", Min = 0.2, Max = 5, Decimals = 1, Default = 1.2,
+	Suffix = "s", Callback = function(v) F.Ball.trailLen = v end })
+bvP2:AddColorPicker({ Text = "Trail Color", Flag = "ball_trailcol", Default = COLORS.Orange or COLORS.Red,
+	Callback = function(c) F.Ball.trailColor = c end })
+bvP2:AddToggle({ Text = "Trajectory Preview", Flag = "ball_traj", Callback = function(on)
+	F.Ball.traj = on
+	if not on then
+		for _, p in ipairs(F.Ball.trajParts) do pcall(function() p:Destroy() end) end
+		F.Ball.trajParts = {}
+	end
+end })
+bvP2:AddSlider({ Text = "Trajectory Steps", Flag = "ball_trajsteps", Min = 10, Max = 80, Default = 40,
+	Callback = function(v) F.Ball.trajSteps = v end })
+bvP2:AddColorPicker({ Text = "Trajectory Color", Flag = "ball_trajcol", Default = COLORS.Cyan,
+	Callback = function(c) F.Ball.trajColor = c end })
+
+local ballTracer = Drawing and Drawing.new and Drawing.new("Line") or nil
+if ballTracer then ballTracer.Thickness = 1; ballTracer.Visible = false end
+
+Library:StartLoop("ballvis", RunService.RenderStepped, function()
+	if Library.Destroyed then return end
+	local ball = findBall()
+
+	-- highlight / chams
+	if (F.Ball.esp or F.Ball.chams) and ball then
+		if not F.Ball.hl or F.Ball.hl.Parent ~= ball then
+			pcall(function() if F.Ball.hl then F.Ball.hl:Destroy() end end)
+			F.Ball.hl = Instance.new("Highlight")
+			F.Ball.hl.Adornee = ball
+			F.Ball.hl.Parent = ball
+		end
+		F.Ball.hl.FillColor = F.Ball.espColor
+		F.Ball.hl.OutlineColor = F.Ball.espColor
+		F.Ball.hl.FillTransparency = F.Ball.chams and 0.35 or 1
+		F.Ball.hl.OutlineTransparency = F.Ball.esp and 0 or 1
+		F.Ball.hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		F.Ball.hl.Enabled = true
+	elseif F.Ball.hl then
+		F.Ball.hl.Enabled = false
+	end
+
+	-- distance label
+	if F.Ball.dist and ball then
+		if not F.Ball.bb or F.Ball.bb.Parent ~= ball then
+			pcall(function() if F.Ball.bb then F.Ball.bb:Destroy() end end)
+			F.Ball.bb = Instance.new("BillboardGui")
+			F.Ball.bb.Size = UDim2.new(0, 90, 0, 16)
+			F.Ball.bb.StudsOffset = Vector3.new(0, 1.4, 0)
+			F.Ball.bb.AlwaysOnTop = true
+			F.Ball.bb.Adornee = ball
+			F.Ball.bb.Parent = ball
+			F.Ball.distLbl = create("TextLabel", { Parent = F.Ball.bb, BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 1, 0), Font = FONT, TextSize = 12, TextStrokeTransparency = 0.4 })
+		end
+		local myc = getChar()
+		local d = myc and math.floor((ball.Position - myc.HumanoidRootPart.Position).Magnitude) or 0
+		F.Ball.distLbl.Text = d .. "m"
+		F.Ball.distLbl.TextColor3 = F.Ball.espColor
+		F.Ball.bb.Enabled = true
+	elseif F.Ball.bb then
+		F.Ball.bb.Enabled = false
+	end
+
+	-- tracer from the bottom of the screen to the ball
+	if ballTracer then
+		if F.Ball.tracer and ball then
+			local sp, on = Camera:WorldToViewportPoint(ball.Position)
+			if on then
+				local vp = Camera.ViewportSize
+				ballTracer.From = Vector2.new(vp.X / 2, vp.Y)
+				ballTracer.To = Vector2.new(sp.X, sp.Y)
+				ballTracer.Color = F.Ball.espColor
+				ballTracer.Visible = true
+			else
+				ballTracer.Visible = false
+			end
+		else
+			ballTracer.Visible = false
+		end
+	end
+
+	-- shot trail (the game's own Trail instance on the ball)
+	if F.Ball.trail and ball then
+		if not F.Ball.trailObj or F.Ball.trailObj.Parent ~= ball then
+			pcall(function() if F.Ball.trailObj then F.Ball.trailObj:Destroy() end end)
+			local a0 = Instance.new("Attachment"); a0.Position = Vector3.new(0, 0.4, 0); a0.Parent = ball
+			local a1 = Instance.new("Attachment"); a1.Position = Vector3.new(0, -0.4, 0); a1.Parent = ball
+			local t = Instance.new("Trail")
+			t.Attachment0, t.Attachment1 = a0, a1
+			t.FaceCamera = true
+			t.Parent = ball
+			F.Ball.trailObj = t
+		end
+		F.Ball.trailObj.Lifetime = F.Ball.trailLen
+		F.Ball.trailObj.Color = ColorSequence.new(F.Ball.trailColor)
+		F.Ball.trailObj.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
+		F.Ball.trailObj.Enabled = true
+	elseif F.Ball.trailObj then
+		F.Ball.trailObj.Enabled = false
+	end
+
+	-- trajectory preview: integrate the ball's current velocity under gravity and
+	-- draw the arc. Only meaningful once it's actually moving (i.e. shot).
+	if F.Ball.traj and ball then
+		local vel = ball.AssemblyLinearVelocity
+		local steps = math.floor(F.Ball.trajSteps)
+		if vel.Magnitude > 4 then
+			local g = Workspace.Gravity
+			local dt = F.Ball.trajTime / steps
+			local pos = ball.Position
+			for i = 1, steps do
+				local p = F.Ball.trajParts[i]
+				if not p or not p.Parent then
+					p = Instance.new("Part")
+					p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+					p.Material = Enum.Material.Neon
+					p.Shape = Enum.PartType.Ball
+					p.Size = Vector3.new(0.22, 0.22, 0.22)
+					p.Parent = Workspace
+					F.Ball.trajParts[i] = p
+				end
+				local t = dt * i
+				p.Position = pos + vel * t + Vector3.new(0, -0.5 * g * t * t, 0)
+				p.Color = F.Ball.trajColor
+				p.Transparency = 0.15 + (i / steps) * 0.55
+			end
+			for i = steps + 1, #F.Ball.trajParts do
+				if F.Ball.trajParts[i] then F.Ball.trajParts[i]:Destroy(); F.Ball.trajParts[i] = nil end
+			end
+		else
+			for _, p in ipairs(F.Ball.trajParts) do p.Transparency = 1 end
+		end
+	elseif #F.Ball.trajParts > 0 and not F.Ball.traj then
+		for _, p in ipairs(F.Ball.trajParts) do pcall(function() p:Destroy() end) end
+		F.Ball.trajParts = {}
+	end
 end)
 
 --=====================================================================
@@ -1122,19 +1393,26 @@ local guardPage = GuardCat:AddTab("Auto Guard")
 local guardP  = guardPage:AddPanel("Auto Guard")
 local guardP2 = guardPage:AddPanel("Settings")
 
--- Holds you in front of the nearest opponent. The bind chip toggles the follow
--- on/off while the feature is enabled.
-F.Guard = { enabled = false, dist = 5, key = nil, following = false }
+-- Holds you in front of the nearest opponent. Prediction leads their velocity so
+-- you arrive where they're going rather than where they were.
+F.Guard = { enabled = false, dist = 5, key = nil, ballOnly = false, predict = 0,
+	faceTarget = true, smooth = 0, maxRange = 60, target = nil, espTarget = false, hl = nil }
 
-local function nearestPlayer()
+local function playerHasBall(p)
+	return p.Character and p.Character:FindFirstChild("Basketball") ~= nil
+end
+
+local function guardTarget()
 	local myc = getChar()
 	if not myc then return nil end
 	local myPos = myc.HumanoidRootPart.Position
-	local best, bestDist = nil, math.huge
+	local best, bestD = nil, math.huge
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-			local d = (p.Character.HumanoidRootPart.Position - myPos).Magnitude
-			if d < bestDist then best, bestDist = p, d end
+			if not F.Guard.ballOnly or playerHasBall(p) then
+				local d = (p.Character.HumanoidRootPart.Position - myPos).Magnitude
+				if d < bestD and d <= F.Guard.maxRange then best, bestD = p, d end
+			end
 		end
 	end
 	return best
@@ -1143,26 +1421,71 @@ end
 guardP:AddToggle({ Text = "Enabled", Flag = "guard_enabled", Bind = true, BindNoToggle = true, Callback = function(on)
 	F.Guard.enabled = on
 	if not on then
-		F.Guard.following = false
-		Library:StopLoop("guard")
+		F.Guard.target = nil
+		if F.Guard.hl then F.Guard.hl.Enabled = false end
 	end
+end })
+guardP:AddToggle({ Text = "Ball Carrier Only", Flag = "guard_ballonly", Callback = function(on) F.Guard.ballOnly = on end })
+guardP:AddToggle({ Text = "Face Target", Flag = "guard_face", Callback = function(on) F.Guard.faceTarget = on end })
+guardP:AddToggle({ Text = "Highlight Target", Flag = "guard_hl", Callback = function(on)
+	F.Guard.espTarget = on
+	if not on and F.Guard.hl then F.Guard.hl.Enabled = false end
 end })
 
 guardP2:AddSlider({ Text = "Distance", Flag = "guard_dist", Min = 2, Max = 12, Decimals = 1, Default = 5,
 	Callback = function(v) F.Guard.dist = v end })
+guardP2:AddSlider({ Text = "Prediction", Flag = "guard_predict", Min = 0, Max = 0.6, Decimals = 2, Default = 0,
+	Suffix = "x", Callback = function(v) F.Guard.predict = v end })
+guardP2:AddSlider({ Text = "Smoothing", Flag = "guard_smooth", Min = 0, Max = 20, Default = 0,
+	Suffix = "x", Callback = function(v) F.Guard.smooth = v end })
+guardP2:AddSlider({ Text = "Max Range", Flag = "guard_range", Min = 10, Max = 150, Default = 60,
+	Suffix = "m", Callback = function(v) F.Guard.maxRange = v end })
 
-Library:StartLoop("guard", RunService.RenderStepped, function()
+Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 	if not F.Guard.enabled or Library.Destroyed then return end
 	local opt = Library.Options["guard_enabled"]
 	local key = opt and opt.GetKey and opt:GetKey()
 	if key and not isDown(key) then return end   -- bound: hold it. unbound: always on.
-	local target = nearestPlayer()
+
+	local target = guardTarget()
+	F.Guard.target = target
 	local myc = getChar()
-	if not (target and myc) then return end
+	if not (target and myc) then
+		if F.Guard.hl then F.Guard.hl.Enabled = false end
+		return
+	end
 	local tHrp = target.Character.HumanoidRootPart
-	local pos = tHrp.Position + (tHrp.CFrame.LookVector * F.Guard.dist)
-	myc.HumanoidRootPart.CFrame = CFrame.new(pos, tHrp.Position)
-end)--=====================================================================
+
+	if F.Guard.espTarget then
+		if not F.Guard.hl or F.Guard.hl.Adornee ~= target.Character then
+			pcall(function() if F.Guard.hl then F.Guard.hl:Destroy() end end)
+			F.Guard.hl = Instance.new("Highlight")
+			F.Guard.hl.FillTransparency = 0.6
+			F.Guard.hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			F.Guard.hl.Adornee = target.Character
+			F.Guard.hl.Parent = target.Character
+		end
+		F.Guard.hl.FillColor = Library.Theme.Accent
+		F.Guard.hl.OutlineColor = Library.Theme.Accent
+		F.Guard.hl.Enabled = true
+	elseif F.Guard.hl then
+		F.Guard.hl.Enabled = false
+	end
+
+	-- lead the target so we land where they're heading
+	local lead = tHrp.AssemblyLinearVelocity * F.Guard.predict
+	local goalPos = tHrp.Position + lead + (tHrp.CFrame.LookVector * F.Guard.dist)
+	local goal = F.Guard.faceTarget and CFrame.new(goalPos, tHrp.Position + lead) or CFrame.new(goalPos)
+
+	local hrp = myc.HumanoidRootPart
+	if F.Guard.smooth <= 0 then
+		hrp.CFrame = goal
+	else
+		hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+	end
+end)
+
+--=====================================================================
 --  CONFIG CATEGORY
 --=====================================================================
 local ConfCat = Library:AddCategory("Config", 4)
@@ -1492,13 +1815,36 @@ function Library:Destroy()
 	for _, c in ipairs(self.Connections) do pcall(function() c:Disconnect() end) end
 	F.Green.enabled = false
 	F.Guard.enabled = false
+	F.Ball.esp, F.Ball.chams, F.Ball.tracer, F.Ball.dist = false, false, false, false
+	F.Ball.trail, F.Ball.traj = false, false
+	pcall(function()
+		-- the ball visuals parent real instances into the ball / workspace, and
+		-- the trajectory spawns parts every frame — all of it has to go or it
+		-- outlives the menu
+		if F.Ball.hl then F.Ball.hl:Destroy() end
+		if F.Ball.bb then F.Ball.bb:Destroy() end
+		if F.Ball.trailObj then F.Ball.trailObj:Destroy() end
+		for _, p in ipairs(F.Ball.trajParts) do p:Destroy() end
+		F.Ball.trajParts = {}
+		if F.Guard.hl then F.Guard.hl:Destroy() end
+		if ballTracer then ballTracer:Remove() end
+	end)
 	pcall(function()
 		if F.Spectate then
 			local h = getHumanoid()
 			if h then Camera.CameraSubject = h end
 			F.Spectate = nil
 		end
-		local h = getHumanoid(); if h then h.AutoRotate = true; h.CameraOffset = Vector3.zero end
+		local h = getHumanoid()
+		if h then h.AutoRotate = true; h.CameraOffset = Vector3.zero; h.PlatformStand = false end
+		-- Rage Green disables collision on the character while it drops; if the
+		-- menu is unloaded mid-shot, put it back
+		local c = LocalPlayer.Character
+		if c then
+			for _, p in ipairs(c:GetDescendants()) do
+				if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
+			end
+		end
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 		if Camera then Camera.CameraType = Enum.CameraType.Custom end
 	end)

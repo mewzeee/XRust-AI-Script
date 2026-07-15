@@ -346,41 +346,55 @@ do
 		Sz = UDim2.new(1, -32, 1, -40), Pos = UDim2.new(0, 16, 0, 34) }).ZIndex = 12
 end
 
--- ================= SCRIPT TABS =================
--- Every script tab is the same shape: description + changelog on the left,
--- fake-loader console + INJECT on the right. Built by one function so adding a
--- game is a single makeScriptTab call rather than another 90 lines.
-local function makeScriptTab(cfg)
-	local page = addTab(cfg.tab)
-	local left = create("Frame", { Parent = page, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), ZIndex = 11 })
-	local desc = card(left, cfg.title, { Sz = UDim2.new(1, 0, 0, 150) })
-	label(desc, cfg.desc, { Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
-		Sz = UDim2.new(1, -28, 1, -40), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 12
+-- ================= SCRIPTS TAB =================
+-- One tab for every script. Left: a scrollable list you pick from. Right: the
+-- selected script's details, its console, and INJECT. Adding a game is one
+-- entry in SCRIPTS - no new tab, no new layout.
+local SCRIPTS = {
+	{
+		name = "Universal", sub = "Most Roblox shooters", title = "XRust Universal", url = SCRIPT_URL,
+		desc = "A client-side aim & visual hub that works in most Roblox shooters.\n\nAimbot, rage bot, triggerbot, full ESP, FOV circle, snaplines, target HUD, anti-aim, fly, and more — all configurable.",
+		changelog = "v1.0\n• Aim suite, ESP, FOV, snaplines.\n• Target renderer + jump circles as true 3D FX.\n• Anti-aim, camera bypass, config system.",
+	},
+	{
+		name = "Basketball Legends", sub = "Auto green · guard · ESP", title = "Basketball Legends", url = BASKETBALL_URL,
+		desc = "Auto Green, ball ESP and guarding tools for Basketball Legends.\n\nAuto Green drives the game's own shot meter and can ramp it smoothly rather than snapping. Rage Green drops you under the floor on release so nobody can contest.",
+		changelog = "v1.1\n• Auto Green: smooth ramp, rage drop, jitter.\n• Ball ESP + shot trail and trajectory preview.\n• Auto Guard: prediction, ball-carrier only, face lock.",
+	},
+}
 
-	local chg = card(left, "Changelog", { Sz = UDim2.new(1, 0, 1, -160), Pos = UDim2.new(0, 0, 0, 160) })
-	local chgScroll = create("ScrollingFrame", { Parent = chg, BackgroundTransparency = 1, BorderSizePixel = 0,
+local scrPage = addTab("Scripts")
+do
+	-- left: the picker
+	local left = create("Frame", { Parent = scrPage, BackgroundTransparency = 1, Size = UDim2.new(0.36, -6, 1, 0), ZIndex = 11 })
+	local listCard = card(left, "Scripts", { Sz = UDim2.new(1, 0, 1, 0) })
+	local listScroll = create("ScrollingFrame", { Parent = listCard, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
-	pad(chgScroll, 14, 4, 12, 8)
-	label(chgScroll, cfg.changelog, { Color = Theme.TextOff, Size = 12.5, Wrap = true, YAlign = Enum.TextYAlignment.Top,
-		Sz = UDim2.new(1, 0, 0, 0), Pos = UDim2.new(0, 0, 0, 0) }).AutomaticSize = Enum.AutomaticSize.Y
-	chgScroll:FindFirstChildOfClass("TextLabel").ZIndex = 12
+	pad(listScroll, 10, 8, 8, 8)
+	create("UIListLayout", { Parent = listScroll, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
 
-	local right = create("Frame", { Parent = page, BackgroundTransparency = 1, Size = UDim2.new(0.5, -6, 1, 0), Position = UDim2.new(0.5, 6, 0, 0), ZIndex = 11 })
-	local con = card(right, "Console", { Sz = UDim2.new(1, 0, 1, -44) })
+	-- right: details + console + inject
+	local right = create("Frame", { Parent = scrPage, BackgroundTransparency = 1, Size = UDim2.new(0.64, -6, 1, 0), Position = UDim2.new(0.36, 6, 0, 0), ZIndex = 11 })
+
+	local infoCard = card(right, "Details", { Sz = UDim2.new(1, 0, 0, 168) })
+	local infoScroll = create("ScrollingFrame", { Parent = infoCard, BackgroundTransparency = 1, BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
+	pad(infoScroll, 14, 4, 12, 8)
+	local infoLbl = label(infoScroll, "", { Color = Theme.TextOff, Size = 12.5, Wrap = true,
+		YAlign = Enum.TextYAlignment.Top, Sz = UDim2.new(1, 0, 0, 0), Pos = UDim2.new(0, 0, 0, 0) })
+	infoLbl.AutomaticSize = Enum.AutomaticSize.Y
+	infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+	infoLbl.ZIndex = 12
+	local infoTitle = infoCard:FindFirstChildOfClass("TextLabel")
+
+	local con = card(right, "Console", { Sz = UDim2.new(1, 0, 1, -222), Pos = UDim2.new(0, 0, 0, 178) })
 	local console = create("ScrollingFrame", { Parent = con, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 1, -32), ScrollBarThickness = 3,
 		ScrollBarImageColor3 = Theme.TextOff, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 14 })
 	pad(console, 12, 6, 10, 8)
 	create("UIListLayout", { Parent = console, Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder })
-
-	local INJBG, INJHOVER = Color3.fromRGB(18, 18, 21), Color3.fromRGB(28, 28, 32)
-	local injectBtn = create("TextButton", { Parent = right, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 38),
-		Position = UDim2.new(0, 0, 1, -38), BackgroundColor3 = INJBG, BorderSizePixel = 0, Font = FONT,
-		TextSize = 15, TextColor3 = Theme.TextHdr, Text = "INJECT", ZIndex = 14 })
-	border(injectBtn, STROKE, 1)
-	injectBtn.MouseEnter:Connect(function() if injectBtn.Active ~= false then TweenService:Create(injectBtn, TweenInfo.new(0.1), { BackgroundColor3 = INJHOVER }):Play() end end)
-	injectBtn.MouseLeave:Connect(function() TweenService:Create(injectBtn, TweenInfo.new(0.1), { BackgroundColor3 = INJBG }):Play() end)
 
 	local conOrder = 0
 	local function consoleLine(text, col)
@@ -390,22 +404,66 @@ local function makeScriptTab(cfg)
 			Size = UDim2.new(1, 0, 0, 16), LayoutOrder = conOrder, ZIndex = 14 })
 		console.CanvasPosition = Vector2.new(0, math.huge)
 	end
-	consoleLine("[ready] press INJECT to load " .. cfg.title .. ".", Theme.TextOff)
+
+	local INJBG, INJHOVER = Color3.fromRGB(18, 18, 21), Color3.fromRGB(28, 28, 32)
+	local injectBtn = create("TextButton", { Parent = right, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 38),
+		Position = UDim2.new(0, 0, 1, -38), BackgroundColor3 = INJBG, BorderSizePixel = 0, Font = FONT,
+		TextSize = 15, TextColor3 = Theme.TextHdr, Text = "INJECT", ZIndex = 14 })
+	border(injectBtn, STROKE, 1)
+	injectBtn.MouseEnter:Connect(function() if injectBtn.Active ~= false then TweenService:Create(injectBtn, TweenInfo.new(0.1), { BackgroundColor3 = INJHOVER }):Play() end end)
+	injectBtn.MouseLeave:Connect(function() TweenService:Create(injectBtn, TweenInfo.new(0.1), { BackgroundColor3 = INJBG }):Play() end)
+
+	local selected, rows = nil, {}
+	local injecting = false
+
+	local function selectScript(entry)
+		selected = entry
+		infoTitle.Text = "  " .. entry.title
+		infoLbl.Text = entry.desc .. "\n\n" .. entry.changelog
+		for e, r in pairs(rows) do
+			local on = (e == entry)
+			r.btn.Text = on and "Selected" or "Select"
+			r.btn.TextColor3 = on and Theme.TextHdr or Theme.TextOff
+			TweenService:Create(r.frame, TweenInfo.new(0.12), { BackgroundColor3 = on and Color3.fromRGB(24, 24, 28) or Color3.fromRGB(16, 16, 19) }):Play()
+			r.accent.Visible = on
+		end
+		conOrder = 0
+		for _, ch in ipairs(console:GetChildren()) do if ch:IsA("TextLabel") then ch:Destroy() end end
+		consoleLine("[ready] " .. entry.title .. " selected — press INJECT.", Theme.TextOff)
+		injectBtn.Text = "INJECT"; injectBtn.TextColor3 = Theme.TextHdr; injectBtn.Active = true; injecting = false
+	end
+
+	for i, entry in ipairs(SCRIPTS) do
+		local row = create("Frame", { Parent = listScroll, Size = UDim2.new(1, 0, 0, 62), LayoutOrder = i,
+			BackgroundColor3 = Color3.fromRGB(16, 16, 19), BorderSizePixel = 0, ZIndex = 14 })
+		border(row, STROKE, 1)
+		local accent = create("Frame", { Parent = row, Size = UDim2.new(0, 2, 1, -12), Position = UDim2.new(0, 0, 0, 6),
+			BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 15 })
+		label(row, entry.name, { Color = Theme.TextHdr, Size = 13, Sz = UDim2.new(1, -20, 0, 16), Pos = UDim2.new(0, 12, 0, 9) }).ZIndex = 15
+		label(row, entry.sub, { Color = Theme.TextOff, Size = 11.5, Sz = UDim2.new(1, -20, 0, 14), Pos = UDim2.new(0, 12, 0, 26) }).ZIndex = 15
+		local btn = create("TextButton", { Parent = row, AutoButtonColor = false, Size = UDim2.new(0, 74, 0, 20),
+			Position = UDim2.new(1, -84, 1, -26), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BorderSizePixel = 0,
+			Font = FONT, TextSize = 11.5, TextColor3 = Theme.TextOff, Text = "Select", ZIndex = 15 })
+		border(btn, STROKE, 1)
+		btn.MouseButton1Click:Connect(function() selectScript(entry) end)
+		rows[entry] = { frame = row, btn = btn, accent = accent }
+	end
 
 	local STEPS = {
 		{ "initializing loader environment", 0.35 },
 		{ "resolving executor capabilities", 0.3 },
 		{ "establishing secure connection", 0.45 },
 		{ "authenticating session", 0.4 },
-		{ "fetching " .. cfg.title .. " payload", 0.55 },
 		{ "verifying payload integrity", 0.35 },
 		{ "mapping runtime modules", 0.4 },
-		{ "loading assets & signatures", 0.4 },
 		{ "compiling bytecode", 0.45 },
 	}
-	local injecting = false
 	injectBtn.MouseButton1Click:Connect(function()
-		if injecting then return end
+		if injecting or not selected then
+			if not selected then consoleLine("[!] pick a script on the left first.", Theme.Bad) end
+			return
+		end
+		local entry = selected
 		injecting = true; injectBtn.Active = false
 		injectBtn.Text = "INJECTING…"; injectBtn.TextColor3 = Theme.TextOff
 		task.spawn(function()
@@ -414,8 +472,8 @@ local function makeScriptTab(cfg)
 				task.wait(step[2])
 			end
 			local ok, err = pcall(function()
-				consoleLine("  downloading script source", Theme.TextOn); task.wait(0.2)
-				local src = httpGet(cfg.url)
+				consoleLine("  fetching " .. entry.title .. " payload", Theme.TextOn); task.wait(0.2)
+				local src = httpGet(entry.url)
 				if not src or #src < 50 then error("empty script (check the url)") end
 				consoleLine("  executing (" .. #src .. " bytes)", Theme.TextOn); task.wait(0.25)
 				local fn = loadstring(src)
@@ -427,36 +485,15 @@ local function makeScriptTab(cfg)
 				injectBtn.Text = "RETRY INJECT"; injectBtn.TextColor3 = Theme.TextHdr; injectBtn.Active = true; injecting = false
 				return
 			end
-			consoleLine("[✓] injected — " .. cfg.title .. " is running", Theme.Good)
+			consoleLine("[✓] injected — " .. entry.title .. " is running", Theme.Good)
 			task.wait(0.5)
 			if hubSnowConn then hubSnowConn:Disconnect() end
 			ScreenGui:Destroy()
 		end)
 	end)
+
+	selectScript(SCRIPTS[1])
 end
-
-makeScriptTab({
-	tab = "Universal", title = "XRust Universal", url = SCRIPT_URL,
-	desc = "A client-side aim & visual hub that works in most Roblox shooters.\n\nAimbot, rage bot, triggerbot, full ESP, FOV circle, snaplines, target HUD, anti-aim, fly, and more — all configurable.",
-	changelog = "v1.0\n• Initial release: aim suite, ESP, FOV, snaplines.\n• Target renderer + jump circles as true 3D FX.\n• Anti-aim, camera bypass, config system.\n• Rich target renderer: 12 styles, ring, marker, beam.",
-})
-
-makeScriptTab({
-	tab = "Basketball", title = "Basketball Legends", url = BASKETBALL_URL,
-	desc = "Auto Green for Basketball Legends.\n\nDrives the game's own shot meter: hold your shoot key and the bar is tweened to full once it passes the release point. Release point and tween time are tunable.",
-	changelog = "v1.0\n• Auto Green with adjustable release point + tween time.\n• Selectable shoot key, optional basketball check.\n• Auto Guard: holds you in front of the nearest player.\n• Shared PlayerList + config system.",
-})
-
--- ================= PLACEHOLDER TAB =================
-local phPage = addTab("Coming Soon")
-do
-	local c = card(phPage, nil, { Sz = UDim2.new(1, 0, 1, 0) })
-	label(c, "Coming Soon", { Color = Theme.TextOff, Size = 22, XAlign = Enum.TextXAlignment.Center,
-		Sz = UDim2.new(1, 0, 0, 30), Pos = UDim2.new(0, 0, 0.5, -22) }).ZIndex = 12
-	label(c, "more scripts will appear here", { Color = Theme.TextOff, Size = 13, XAlign = Enum.TextXAlignment.Center,
-		Sz = UDim2.new(1, 0, 0, 18), Pos = UDim2.new(0, 0, 0.5, 8) }).ZIndex = 12
-end
-
 -- ================= SETTINGS TAB =================
 local setPage = addTab("Settings")
 do
