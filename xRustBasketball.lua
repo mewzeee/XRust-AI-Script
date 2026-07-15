@@ -668,13 +668,34 @@ function Library:AddCategory(name, order)
 				local arw = label(head, "▾", { Color = Library.Theme.TextOff, Size = 11,
 					Sz = UDim2.new(0, 16, 1, 0), Pos = UDim2.new(1, -16, 0, 0), XAlign = Enum.TextXAlignment.Center })
 
+				-- Long lists (the skin catalogue is 452) get a search box and a
+				-- capped, scrolling body. The old version sized the list to
+				-- #values * 18 with every option built inline — 452 entries meant
+				-- an 8100px list you could never reach the bottom of.
+				local ROW_H, MAX_H = 18, 148
+				local searchable = (opts.Search ~= false) and (#values > 10)
+
 				local listFrame = create("Frame", { Parent = scroll, BackgroundColor3 = Library.Theme.Bg,
 					BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0), ClipsDescendants = true,
 					Visible = false, LayoutOrder = order })
 				indent(listFrame, opts.Sub)
 				border(listFrame, Library.Theme.Border, 1)
-				local listInner = create("Frame", { Parent = listFrame, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0) })
-				create("UIListLayout", { Parent = listInner, SortOrder = Enum.SortOrder.LayoutOrder })
+
+				local searchBox
+				if searchable then
+					searchBox = create("TextBox", { Parent = listFrame, Size = UDim2.new(1, 0, 0, ROW_H),
+						BackgroundColor3 = Library.Theme.Panel2, BorderSizePixel = 0, Font = Library.Font,
+						TextSize = 11.5, TextColor3 = Library.Theme.TextOn, ClearTextOnFocus = false,
+						PlaceholderText = "  search...", PlaceholderColor3 = Library.Theme.TextOff,
+						Text = "", TextXAlignment = Enum.TextXAlignment.Left })
+				end
+
+				local listScroll = create("ScrollingFrame", { Parent = listFrame, BackgroundTransparency = 1,
+					BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Library.Theme.TextOff,
+					CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					Position = UDim2.new(0, 0, 0, searchable and ROW_H or 0),
+					Size = UDim2.new(1, 0, 1, searchable and -ROW_H or 0) })
+				create("UIListLayout", { Parent = listScroll, SortOrder = Enum.SortOrder.LayoutOrder })
 
 				local api, open = {}, false
 				local btns = {}
@@ -690,22 +711,57 @@ function Library:AddCategory(name, order)
 				end
 				function api:Get() return selected end
 
-				for _, v in ipairs(values) do
-					local b = create("TextButton", { Parent = listInner, AutoButtonColor = false,
-						BackgroundColor3 = Library.Theme.Bg, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 18),
-						Font = Library.Font, Text = "  " .. tostring(v), TextSize = 12,
+				local shownCount = #values
+				local function resize()
+					if not open then return end
+					local body = math.min(MAX_H, math.max(ROW_H, shownCount * ROW_H))
+					listFrame.Size = UDim2.new(1, 0, 0, body + (searchable and ROW_H or 0))
+				end
+				local function applyFilter(q)
+					q = tostring(q or ""):lower()
+					local shown = 0
+					for v, b in pairs(btns) do
+						-- UIListLayout skips hidden children, so hiding is enough
+						local hit = (q == "") or (tostring(v):lower():find(q, 1, true) ~= nil)
+						b.Visible = hit
+						if hit then shown = shown + 1 end
+					end
+					shownCount = shown
+					resize()
+				end
+
+				for i, v in ipairs(values) do
+					local b = create("TextButton", { Parent = listScroll, AutoButtonColor = false,
+						BackgroundColor3 = Library.Theme.Bg, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, ROW_H),
+						Font = Library.Font, Text = "  " .. tostring(v), TextSize = 12, LayoutOrder = i,
 						TextColor3 = Library.Theme.TextOff, TextXAlignment = Enum.TextXAlignment.Left })
 					btns[v] = b
 					b.MouseEnter:Connect(function() b.BackgroundColor3 = Library.Theme.Panel2 end)
 					b.MouseLeave:Connect(function() b.BackgroundColor3 = Library.Theme.Bg end)
-					b.MouseButton1Click:Connect(function() api:Set(v); open = false; listFrame.Visible = false; listFrame.Size = UDim2.new(1, 0, 0, 0); arw.Text = "▾" end)
+					b.MouseButton1Click:Connect(function()
+						api:Set(v); open = false
+						listFrame.Visible = false; listFrame.Size = UDim2.new(1, 0, 0, 0); arw.Text = "▾"
+					end)
 				end
+				if searchBox then
+					searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+						applyFilter(searchBox.Text)
+					end)
+				end
+
 				head.MouseButton1Click:Connect(function()
 					open = not open
-					listFrame.Visible = true
-					listFrame.Size = UDim2.new(1, 0, 0, open and (#values * 18) or 0)
-					arw.Text = open and "▴" or "▾"
-					if not open then task.defer(function() if not open then listFrame.Visible = false end end) end
+					if open then
+						listFrame.Visible = true
+						if searchBox then searchBox.Text = "" end
+						applyFilter("")
+						resize()
+						arw.Text = "▴"
+					else
+						listFrame.Size = UDim2.new(1, 0, 0, 0)
+						arw.Text = "▾"
+						task.defer(function() if not open then listFrame.Visible = false end end)
+					end
 				end)
 				api.Row = row
 				function api:SetVisible(v) row.Visible = v; if not v then listFrame.Visible = false; listFrame.Size = UDim2.new(1, 0, 0, 0) end end
@@ -1874,8 +1930,9 @@ end)
 
 --== Skin Changer ==--
 local skinPage = ShootCat:AddTab("Skin Changer")
-local skP  = skinPage:AddPanel("Ball Skin")
-local skP2 = skinPage:AddPanel("Custom")
+local skP  = skinPage:AddPanel("Ball")        -- the cosmetic itself
+local skFX = skinPage:AddPanel("Effects")     -- green effect + streak
+local skP2 = skinPage:AddPanel("Advanced")    -- raw ids / tint, rarely touched
 
 -- CLIENT-SIDE ONLY. The real equip path is EconomyService.RE.Equip, which is a
 -- server call gated on what you own — so this cannot give you skins. What it
@@ -1920,13 +1977,27 @@ local function skinCatalogue()
 	return ITEMS and ITEMS.Skins or nil
 end
 
+-- ── one list to rule them ──────────────────────────────────────────────
+-- A skin's TEXTURE (Modules.Items.Skins) and its VFX PREFAB (Assets.Ball)
+-- are keyed by the SAME name — Items.Skins.Conqueror and Assets.Ball.Conqueror
+-- are the same cosmetic. Two dropdowns meant hunting the same name twice, so
+-- this is the union of both, and picking one applies whichever parts exist.
 local function skinNames()
-	local out = { "None" }
+	local out, seen = { "None" }, { None = true }
 	local cat = skinCatalogue()
 	if cat then
-		for name in pairs(cat) do table.insert(out, name) end
-		table.sort(out)
+		for name in pairs(cat) do
+			if not seen[name] then seen[name] = true; table.insert(out, name) end
+		end
 	end
+	-- prefabs that have no catalogue row (pure effects like Helios) still belong
+	local f = RS:FindFirstChild("Assets") and RS.Assets:FindFirstChild("Ball")
+	if f then
+		for _, d in ipairs(f:GetChildren()) do
+			if not seen[d.Name] then seen[d.Name] = true; table.insert(out, d.Name) end
+		end
+	end
+	table.sort(out)
 	return out
 end
 
@@ -1946,15 +2017,6 @@ local function skinFolder()
 	return a and a:FindFirstChild("Ball")
 end
 
-local function auraNames()
-	local out = { "None" }
-	local f = skinFolder()
-	if f then
-		for _, d in ipairs(f:GetChildren()) do table.insert(out, d.Name) end
-		table.sort(out)
-	end
-	return out
-end
 
 -- The SpecialMesh lives somewhere under the Tool, not necessarily on the part
 -- we weld to — so search the Tool when there is one.
@@ -2180,47 +2242,7 @@ local function applyPreset(name)
 	end
 end
 
--- THE SKIN. All 452 from the game's own catalogue; picking one writes that
--- skin's texture id straight onto the ball.
-skP:AddDropdown({ Text = "Ball Skin", Flag = "skin_name", Options = skinNames(), Default = "None",
-	Callback = function(v)
-		F.Skin.skin = v
-		local tex = skinTexture(v)
-		if v ~= "None" and not tex then
-			Library:Notify("Skin", "'" .. v .. "' has no texture in the catalogue.", 3)
-		end
-	end })
-
--- The VFX prefab (particles + character aura) is a SEPARATE library from the
--- texture — Assets.Ball, not Modules.Items. Keeping them apart is the whole
--- reason the old "apply Conqueror" never retextured anything: Conqueror's
--- prefab is particles, its texture lives in the catalogue.
-skP:AddDropdown({ Text = "Ball Effect", Flag = "skin_preset", Options = auraNames(), Default = "None",
-	Callback = function(v)
-		F.Skin.preset = v
-		if F.Skin.enabled then applyPreset(v) end
-	end })
-skP:AddToggle({ Text = "Include Aura", Flag = "skin_aura", Callback = function(on)
-	F.Skin.aura = on
-	if F.Skin.enabled then applyPreset(F.Skin.preset) end
-end })
-skP:AddButton({ Text = "Re-apply", Callback = function()
-	if F.Skin.enabled then applyPreset(F.Skin.preset) else Library:Notify("Skin", "Enable it first.", 2) end
-end })
-skP:AddButton({ Text = "Dump Selected Skin", Callback = function()
-	local f = skinFolder()
-	local skin = f and f:FindFirstChild(F.Skin.preset)
-	if not skin then Library:Notify("Skin", "Pick a skin first.", 2); return end
-	local lines = { skin:GetFullName() }
-	for _, d in ipairs(skin:GetDescendants()) do
-		table.insert(lines, ("%s  <%s>"):format(d:GetFullName():sub(#skin:GetFullName() + 2), d.ClassName))
-	end
-	local s = table.concat(lines, "\n")
-	if typeof(setclipboard) == "function" then pcall(setclipboard, s) end
-	print(s)
-	Library:Notify("Skin", "Structure copied to clipboard.", 3, "good")
-end })
-
+-- Enabled first — it's the switch, it belongs at the top.
 skP:AddToggle({ Text = "Enabled", Flag = "skin_enabled", Callback = function(on)
 	F.Skin.enabled = on
 	rememberDefaults()
@@ -2230,6 +2252,26 @@ skP:AddToggle({ Text = "Enabled", Flag = "skin_enabled", Callback = function(on)
 		clearSkinClones()
 		restoreSkin()
 	end
+end })
+
+-- ONE control. The name drives both halves of a cosmetic: its texture from the
+-- catalogue and its VFX prefab from Assets.Ball. Type to filter — 452 entries
+-- is not a list you scroll.
+skP:AddDropdown({ Text = "Ball", Flag = "skin_name", Options = skinNames(), Default = "None", Search = true,
+	Callback = function(v)
+		F.Skin.skin = v
+		F.Skin.preset = v          -- same name feeds the prefab lookup
+		if F.Skin.enabled then applyPreset(v) end
+		if v ~= "None" and not skinTexture(v) and not (skinFolder() and skinFolder():FindFirstChild(v)) then
+			Library:Notify("Skin", "'" .. v .. "' has neither a texture nor a prefab.", 3)
+		end
+	end })
+skP:AddToggle({ Text = "Include Aura", Flag = "skin_aura", Callback = function(on)
+	F.Skin.aura = on
+	if F.Skin.enabled then applyPreset(F.Skin.preset) end
+end })
+skP:AddButton({ Text = "Re-apply", Callback = function()
+	if F.Skin.enabled then applyPreset(F.Skin.preset) else Library:Notify("Skin", "Enable it first.", 2) end
 end })
 skP:AddToggle({ Text = "Tint Ball", Flag = "skin_usecolor", Callback = function(on) F.Skin.useColor = on end })
 skP:AddColorPicker({ Text = "Tint", Flag = "skin_color", Default = Color3.fromRGB(255, 255, 255),
@@ -2268,11 +2310,25 @@ end
 -- in and left alone: the particles emit on their own, so anchoring everything
 -- and deleting it after `life` is enough. Anything not anchored would fall.
 local function playEffect(name)
-	if name == "None" then return end
+	if name == "None" then
+		Library:Notify("Effect", "Pick an effect first.", 2)
+		return
+	end
 	local f = effectFolder()
-	local tpl = f and f:FindFirstChild(name)
+	if not f then
+		Library:Notify("Effect", "Assets.Effects missing.", 3)
+		return
+	end
+	local tpl = f:FindFirstChild(name)
+	if not tpl then
+		Library:Notify("Effect", "'" .. name .. "' not in Assets.Effects.", 3)
+		return
+	end
 	local myc = getChar()
-	if not (tpl and myc) then return end
+	if not myc then
+		Library:Notify("Effect", "No character.", 3)
+		return
+	end
 
 	local clone = tpl:Clone()
 	clone.Name = SKIN_TAG .. "_FX"
@@ -2318,7 +2374,21 @@ local function playEffect(name)
 			pcall(function() d:Play() end)
 		end
 	end
-	warn(("[XRust] effect '%s': %d emitters/beams"):format(name, emitted))
+	-- Report what actually got built. An effect that "does nothing" is either
+	-- geometry with no emitters, or emitters that fired off-screen — the counts
+	-- tell which without more guessing.
+	local partCount = 0
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BasePart") then partCount = partCount + 1 end
+	end
+	if clone:IsA("BasePart") then partCount = partCount + 1 end
+	warn(("[XRust] effect '%s': %d emitters, %d parts, at %s"):format(
+		name, emitted, partCount, tostring(base.Position)))
+	if emitted == 0 and partCount == 0 then
+		Library:Notify("Effect", "'" .. name .. "' cloned but is empty.", 4)
+	else
+		Library:Notify("Effect", ("%s — %d emitters, %d parts"):format(name, emitted, partCount), 3, "good")
+	end
 
 	table.insert(F.GFX.live, clone)
 
@@ -2388,22 +2458,22 @@ local function applyStreak(name)
 	Library:Notify("Streak", n > 0 and ("Applied " .. name) or "Nothing to attach — see console.", 3, n > 0 and "good" or nil)
 end
 
-skP2:AddToggle({ Text = "Custom Streak", Flag = "streak_enabled", Callback = function(on)
+skFX:AddToggle({ Text = "Custom Streak", Flag = "streak_enabled", Callback = function(on)
 	F.Streak.enabled = on
 	if on then applyStreak(F.Streak.name) else clearStreak() end
 end })
-skP2:AddDropdown({ Text = "Streak Effect", Flag = "streak_name", Options = streakNames(), Default = "None",
+skFX:AddDropdown({ Text = "Streak Effect", Flag = "streak_name", Options = streakNames(), Default = "None",
 	Callback = function(v)
 		F.Streak.name = v
 		if F.Streak.enabled then applyStreak(v) end
 	end })
 
-skP2:AddToggle({ Text = "Custom Green Effect", Flag = "gfx_enabled", Callback = function(on) F.GFX.enabled = on end })
-skP2:AddDropdown({ Text = "Green Effect", Flag = "gfx_name", Options = effectNames(), Default = "None",
+skFX:AddToggle({ Text = "Custom Green Effect", Flag = "gfx_enabled", Callback = function(on) F.GFX.enabled = on end })
+skFX:AddDropdown({ Text = "Green Effect", Flag = "gfx_name", Options = effectNames(), Default = "None",
 	Callback = function(v) F.GFX.name = v end })
-skP2:AddSlider({ Text = "Effect Lifetime", Flag = "gfx_life", Min = 1, Max = 10, Decimals = 1, Default = 4,
+skFX:AddSlider({ Text = "Effect Lifetime", Flag = "gfx_life", Min = 1, Max = 10, Decimals = 1, Default = 4,
 	Suffix = "s", Callback = function(v) F.GFX.life = v end })
-skP2:AddButton({ Text = "Preview", Callback = function()
+skFX:AddButton({ Text = "Preview", Callback = function()
 	if F.GFX.name == "None" then Library:Notify("Effect", "Pick one first.", 2); return end
 	playEffect(F.GFX.name)
 end })
