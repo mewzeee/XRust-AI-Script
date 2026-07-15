@@ -2023,6 +2023,41 @@ local function attachLoose(src, anchor, tagName)
 	return 1
 end
 
+-- Attachments are how the game pins an effect to a SPOT on a limb — eye flames
+-- live on an attachment positioned at the eyes, not on the Head itself. Cloning
+-- the attachment keeps that offset AND brings its emitters with it. Skipping
+-- them (which the first version did, since an Attachment is not a
+-- BasePart/Model/emitter) is why EyeFlame never showed.
+local function attachAttachment(src, anchor, tagName)
+	local a = src:Clone()
+	a.Name = tagName
+	for _, e in ipairs(a:GetDescendants()) do
+		if e:IsA("ParticleEmitter") or e:IsA("Beam") then e.Enabled = true end
+	end
+	a.Parent = anchor
+	return 1
+end
+
+-- Shared handler: mount one template child onto a limb/part the right way for
+-- whatever it happens to be.
+local function mountItem(item, anchor, tagName)
+	if item:IsA("BasePart") or item:IsA("Model") then
+		return attachClone(item, anchor, tagName)
+	elseif item:IsA("Attachment") then
+		return attachAttachment(item, anchor, tagName)
+	elseif item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("PointLight") or item:IsA("SpotLight") then
+		return attachLoose(item, anchor, tagName)
+	elseif item:IsA("CFrameValue") or item:IsA("Folder") then
+		-- e.g. UpperTorso.VFX — a wrapper holding the real emitters
+		local n = 0
+		for _, e in ipairs(item:GetChildren()) do
+			n = n + mountItem(e, anchor, tagName)
+		end
+		return n
+	end
+	return 0
+end
+
 local function applyPreset(name)
 	clearSkinClones()
 	if name == "None" then return end
@@ -2081,18 +2116,7 @@ local function applyPreset(name)
 				local part = char:FindFirstChild(limbGroup.Name)
 				if part and part:IsA("BasePart") then
 					for _, item in ipairs(limbGroup:GetChildren()) do
-						if item:IsA("BasePart") or item:IsA("Model") then
-							n = n + attachClone(item, part, SKIN_TAG)
-						elseif item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("PointLight") then
-							n = n + attachLoose(item, part, SKIN_TAG)
-						elseif item:IsA("CFrameValue") then
-							-- e.g. UpperTorso.VFX: a CFrameValue holding emitters
-							for _, e in ipairs(item:GetChildren()) do
-								if e:IsA("ParticleEmitter") or e:IsA("Beam") then
-									n = n + attachLoose(e, part, SKIN_TAG)
-								end
-							end
-						end
+						n = n + mountItem(item, part, SKIN_TAG)
 					end
 				end
 			end
@@ -2209,6 +2233,32 @@ local function playEffect(name)
 	end
 	if clone:IsA("BasePart") then clone.Anchored = true; clone.CFrame = base end
 	clone.Parent = Workspace
+
+	-- Templates ship with their emitters DISABLED — the game's own effect script
+	-- turns them on. Without this the clone is a correctly-placed, completely
+	-- invisible model, which is exactly what "the green effect changer doesn't
+	-- work" looked like. Rate==0 emitters are one-shot bursts, so they need an
+	-- explicit :Emit() rather than Enabled.
+	local emitted = 0
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("ParticleEmitter") then
+			if d.Rate and d.Rate > 0 then
+				d.Enabled = true
+			else
+				pcall(function() d:Emit(math.max(1, math.floor(d.Lifetime.Max * 20))) end)
+			end
+			emitted = emitted + 1
+		elseif d:IsA("Beam") or d:IsA("Trail") then
+			d.Enabled = true
+			emitted = emitted + 1
+		elseif d:IsA("PointLight") or d:IsA("SpotLight") then
+			d.Enabled = true
+		elseif d:IsA("Sound") then
+			pcall(function() d:Play() end)
+		end
+	end
+	warn(("[XRust] effect '%s': %d emitters/beams"):format(name, emitted))
+
 	table.insert(F.GFX.live, clone)
 
 	task.delay(F.GFX.life, function()
@@ -2264,12 +2314,9 @@ local function applyStreak(name)
 	for _, group in ipairs(tpl:GetChildren()) do
 		local limb = char:FindFirstChild(group.Name)
 		if limb and limb:IsA("BasePart") then
+			-- mountItem handles Attachments too, which is what EyeFlame rides on
 			for _, item in ipairs(group:GetChildren()) do
-				if item:IsA("BasePart") or item:IsA("Model") then
-					n = n + attachClone(item, limb, STREAK_TAG)
-				elseif item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("PointLight") then
-					n = n + attachLoose(item, limb, STREAK_TAG)
-				end
+				n = n + mountItem(item, limb, STREAK_TAG)
 			end
 		elseif group:IsA("ParticleEmitter") or group:IsA("Beam") then
 			local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
