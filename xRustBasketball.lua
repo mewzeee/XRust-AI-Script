@@ -1086,6 +1086,52 @@ local function findBall()
 	if best then lastBall = best end
 	return best
 end
+-- HOOPS. The old scan only looked at Workspace:GetChildren() — direct children
+-- only — so any hoop nested under a court/map folder was invisible to it, which
+-- is why Hoop ESP did nothing. Walk descendants instead, but cache the result:
+-- hoops don't move or respawn, so this runs once and is reused by both the ESP
+-- and the rage teleport.
+local hoopCache, nextHoopFind = {}, 0
+local HOOP_WORDS = { "hoop", "rim", "net", "basket", "backboard" }
+local function looksLikeHoop(name)
+	local n = name:lower()
+	for _, w in ipairs(HOOP_WORDS) do
+		if n:find(w, 1, true) then return true end
+	end
+	return false
+end
+local function findHoops()
+	if os.clock() < nextHoopFind and #hoopCache > 0 then return hoopCache end
+	nextHoopFind = os.clock() + 5
+	local found = {}
+	for _, d in ipairs(Workspace:GetDescendants()) do
+		if (d:IsA("Model") or d:IsA("BasePart")) and looksLikeHoop(d.Name) then
+			-- skip nested matches (a "Rim" inside a "Hoop" model) so one hoop
+			-- doesn't get highlighted three times
+			local parentIsHoop = d.Parent and d.Parent ~= Workspace and looksLikeHoop(d.Parent.Name)
+			if not parentIsHoop then table.insert(found, d) end
+		end
+	end
+	if #found > 0 then hoopCache = found end
+	return hoopCache
+end
+local function hoopPos(h)
+	if h:IsA("BasePart") then return h.Position end
+	local ok, cf = pcall(function() return h:GetPivot().Position end)
+	return ok and cf or nil
+end
+local function nearestHoop(from)
+	local best, bestD = nil, math.huge
+	for _, h in ipairs(findHoops()) do
+		local p = hoopPos(h)
+		if p then
+			local d = (p - from).Magnitude
+			if d < bestD then best, bestD = p, d end
+		end
+	end
+	return best, bestD
+end
+
 local function ballHeld()
 	local c = LocalPlayer.Character
 	return c and c:FindFirstChild("Basketball") ~= nil
@@ -1107,9 +1153,9 @@ local greenP2 = greenPage:AddPanel("Settings")
 --           but the bar visibly teleports.
 --   Ramp  - from the moment the bar starts moving, drive it up ourselves at a
 --           steady rate so it *climbs* to full. Looks like a real shot.
-F.Green = { enabled = false, mode = "Ramp", release = 0.9, tween = 0.045, rampTime = 0.35,
+F.Green = { enabled = false, mode = "Ramp", release = 0.9, tween = 0.045, rampTime = 0.18,
 	key = Enum.KeyCode.E, requireBall = true, jitter = 0, sound = false,
-	rage = false, rageDepth = 3, rageHold = 0.6 }
+	rage = false, rageMode = "Drop", rageDepth = 3, rageHold = 0.6, rageRadius = 30 }
 
 local function shootingBar()
 	local pg = LocalPlayer:FindFirstChild("PlayerGui")
@@ -1133,7 +1179,9 @@ greenP:AddToggle({ Text = "Green Sound", Flag = "green_sound", Callback = functi
 
 greenP2:AddDropdown({ Text = "Mode", Flag = "green_mode", Options = { "Ramp", "Snap" }, Default = "Ramp",
 	Callback = function(v) F.Green.mode = v end })
-greenP2:AddSlider({ Text = "Ramp Time", Flag = "green_ramp", Min = 0.1, Max = 1.5, Decimals = 2, Default = 0.35,
+-- The ramp runs from the release point to full. If it's longer than you hold the
+-- key for, the shot fires mid-climb and misses — so this is capped short.
+greenP2:AddSlider({ Text = "Ramp Time", Flag = "green_ramp", Min = 0.05, Max = 0.5, Decimals = 2, Default = 0.18,
 	Suffix = "s", Callback = function(v) F.Green.rampTime = v end })
 greenP2:AddSlider({ Text = "Release Point", Flag = "green_release", Min = 0.5, Max = 0.99, Decimals = 2, Default = 0.9,
 	Callback = function(v) F.Green.release = v end })
@@ -1141,6 +1189,10 @@ greenP2:AddSlider({ Text = "Snap Time", Flag = "green_tween", Min = 0.01, Max = 
 	Suffix = "s", Callback = function(v) F.Green.tween = v end })
 greenP2:AddSlider({ Text = "Jitter", Flag = "green_jitter", Min = 0, Max = 0.05, Decimals = 3, Default = 0,
 	Callback = function(v) F.Green.jitter = v end })
+greenP2:AddDropdown({ Text = "Rage Mode", Flag = "green_ragemode", Options = { "Drop", "3PT Teleport" }, Default = "Drop",
+	Callback = function(v) F.Green.rageMode = v end })
+greenP2:AddSlider({ Text = "3PT Radius", Flag = "green_radius", Min = 12, Max = 60, Default = 30,
+	Suffix = "m", Callback = function(v) F.Green.rageRadius = v end })
 greenP2:AddSlider({ Text = "Rage Depth", Flag = "green_depth", Min = 1, Max = 8, Decimals = 1, Default = 3,
 	Suffix = "m", Callback = function(v) F.Green.rageDepth = v end })
 greenP2:AddSlider({ Text = "Rage Hold", Flag = "green_hold", Min = 0.2, Max = 2, Decimals = 2, Default = 0.6,
@@ -1174,6 +1226,65 @@ end
 -- Only a few studs - deep enough that no defender's hitbox reaches you, shallow
 -- enough that the game doesn't count it as a void fall and reset you. The
 -- HumanoidRootPart is put back exactly where it started.
+-- Rage Teleport: instead of sinking, relocate to a spot on the arc around the
+-- CURRENT hoop, at `rageRadius` studs, picked to be as far from the nearest
+-- defender as possible. The hoop is the anchor rather than the court, because
+-- "which court am I on" is really just "which hoop am I shooting at" — that
+-- works on every court without knowing the map's layout. Facing is kept toward
+-- the hoop so the shot still reads as aimed.
+local function rageTeleport()
+	local myc = getChar()
+	if not myc then return end
+	local hrp = myc.HumanoidRootPart
+	local origin = hrp.CFrame
+
+	local hoop = nearestHoop(hrp.Position)
+	if not hoop then
+		Library:Notify("Rage Green", "No hoop found — falling back to Drop.", 3)
+		return false
+	end
+
+	-- nearest opponent, to pick the side of the arc they're not on
+	local defender, dD = nil, math.huge
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local d = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+			if d < dD then defender, dD = p.Character.HumanoidRootPart.Position, d end
+		end
+	end
+
+	local flat = Vector3.new(1, 0, 1)
+	local best, bestScore = nil, -math.huge
+	for i = 0, 23 do
+		local a = (i / 24) * math.pi * 2
+		local dir = Vector3.new(math.cos(a), 0, math.sin(a))
+		local spot = hoop + dir * F.Green.rageRadius
+		-- keep our feet at roughly our current height (the arc is on the floor)
+		spot = Vector3.new(spot.X, hrp.Position.Y, spot.Z)
+		local score
+		if defender then
+			score = ((spot - defender) * flat).Magnitude          -- as far from them as possible
+		else
+			score = -((spot - hrp.Position) * flat).Magnitude     -- else: move the least
+		end
+		if score > bestScore then best, bestScore = spot, score end
+	end
+	if not best then return false end
+
+	hrp.CFrame = CFrame.new(best, Vector3.new(hoop.X, best.Y, hoop.Z))
+	hrp.AssemblyLinearVelocity = Vector3.zero
+
+	task.delay(F.Green.rageHold, function()
+		pcall(function()
+			if hrp and hrp.Parent then
+				hrp.CFrame = origin
+				hrp.AssemblyLinearVelocity = Vector3.zero
+			end
+		end)
+	end)
+	return true
+end
+
 local function rageDrop()
 	local myc = getChar()
 	if not myc then return end
@@ -1213,38 +1324,46 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 
 	greenBusy = true
 	task.spawn(function()
-		local dropped = false
-		local rampStart = nil
+		local dropped, fired = false, false
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
 			if bar then
 				local y = bar.Size.Y.Scale
+
 				if F.Green.rage and not dropped and y > 0.15 then
 					dropped = true
-					pcall(rageDrop)
+					if F.Green.rageMode == "3PT Teleport" then
+						local ok = pcall(rageTeleport)
+						if not ok then pcall(rageDrop) end
+					else
+						pcall(rageDrop)
+					end
 				end
-				if F.Green.mode == "Ramp" then
-					-- climb the bar ourselves at a constant rate once it starts
-					if y > 0.02 then
-						rampStart = rampStart or os.clock()
-						local a = math.clamp((os.clock() - rampStart) / math.max(0.05, F.Green.rampTime), 0, 1)
-						local target = math.clamp(y + (1 - y) * a, y, 1)
-						if F.Green.jitter > 0 then
-							target = math.clamp(target - math.random() * F.Green.jitter, 0, 1)
-						end
-						bar.Size = UDim2.new(1, 0, target, 0)
-						if a >= 1 then
-							bar.Size = UDim2.new(1, 0, 1, 0)
-							playGreenSound()
-						end
+
+				-- Fire ONCE, as a single tween. Do not write bar.Size every frame:
+				-- the game animates the same property, so per-frame writes just
+				-- fight it (bar visibly jitters up and down) and reading the bar
+				-- back feeds our own output into the next target. TweenSize with
+				-- override=true wins against the game's tween cleanly.
+				if not fired and y > F.Green.release then
+					fired = true
+					-- Ramp = a visible climb, Snap = effectively instant. Same
+					-- mechanic, different duration.
+					local dur = (F.Green.mode == "Ramp") and F.Green.rampTime or F.Green.tween
+					-- jitter is rolled ONCE per shot, not per frame
+					local target = 1
+					if F.Green.jitter > 0 then
+						target = math.clamp(1 - math.random() * F.Green.jitter, 0, 1)
 					end
-				else
-					if y > F.Green.release then
-						bar:TweenSize(UDim2.new(1, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Linear, F.Green.tween, true)
-						task.wait()
-						if bar and bar.Parent then bar.Size = UDim2.new(1, 0, 1, 0) end
-						playGreenSound()
-					end
+					local style = (F.Green.mode == "Ramp") and Enum.EasingStyle.Quad or Enum.EasingStyle.Linear
+					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out, style, dur, true)
+					-- pin it afterwards in case the game writes over the tween
+					task.delay(dur + 0.02, function()
+						if bar and bar.Parent and greenKeyDown() then
+							bar.Size = UDim2.new(1, 0, target, 0)
+						end
+					end)
+					playGreenSound()
 				end
 			end
 			task.wait()
@@ -1546,25 +1665,27 @@ Library:StartLoop("ballvis", RunService.RenderStepped, function()
 		F.Ball.landRing.Transparency = 1
 	end
 
-	-- hoop ESP. Hoops don't move or respawn, so re-scanning per-frame is pure
-	-- waste — find them once a second and let the highlights ride.
-	if F.Ball.hoops and os.clock() >= nextHoopScan then
-		nextHoopScan = os.clock() + 1
-		for _, d in ipairs(Workspace:GetChildren()) do
-			if d:IsA("Model") and (d.Name:lower():find("hoop") or d.Name:lower():find("rim") or d.Name:lower():find("net")) then
-				local hl = F.Ball.hoopHls[d]
-				if not hl or not hl.Parent then
-					hl = Instance.new("Highlight")
-					hl.FillTransparency = 0.7
-					hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-					hl.Adornee = d
-					hl.Parent = d
-					F.Ball.hoopHls[d] = hl
-				end
-				hl.FillColor = F.Ball.hoopColor
-				hl.OutlineColor = F.Ball.hoopColor
-				hl.Enabled = true
+	-- hoop ESP. findHoops() caches, so this is cheap to call every frame; the
+	-- highlights just get their colour refreshed.
+	if F.Ball.hoops then
+		local hoops = findHoops()
+		if #hoops == 0 and os.clock() > nextHoopScan then
+			nextHoopScan = os.clock() + 6
+			Library:Notify("Hoop ESP", "No hoops found in this map's workspace.", 4)
+		end
+		for _, d in ipairs(hoops) do
+			local hl = F.Ball.hoopHls[d]
+			if not hl or not hl.Parent then
+				hl = Instance.new("Highlight")
+				hl.FillTransparency = 0.7
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.Adornee = d
+				hl.Parent = d
+				F.Ball.hoopHls[d] = hl
 			end
+			hl.FillColor = F.Ball.hoopColor
+			hl.OutlineColor = F.Ball.hoopColor
+			hl.Enabled = true
 		end
 	end
 end)
@@ -1666,6 +1787,270 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 		hrp.CFrame = goal
 	else
 		hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+	end
+end)
+
+--=====================================================================
+--  VISUALS CATEGORY
+--=====================================================================
+local VisCat = Library:AddCategory("Visuals", 3)
+
+--== Player ESP ==--
+local espPage = VisCat:AddTab("Player ESP")
+local espP  = espPage:AddPanel("Players")
+local espP2 = espPage:AddPanel("Settings")
+
+F.ESP = { enabled = false, box = false, name = false, dist = false, chams = false, tracer = false,
+	teamCheck = false, color = COLORS.Red, teamColor = false, maxDist = 300, objs = {} }
+
+local function espColorFor(p)
+	if F.ESP.teamColor and p.Team then return p.TeamColor.Color end
+	return F.ESP.color
+end
+
+espP:AddToggle({ Text = "Enabled", Flag = "esp_enabled", Callback = function(on)
+	F.ESP.enabled = on
+	if not on then
+		for _, o in pairs(F.ESP.objs) do
+			pcall(function()
+				if o.hl then o.hl.Enabled = false end
+				if o.bb then o.bb.Enabled = false end
+				if o.box then o.box.Visible = false end
+				if o.tracer then o.tracer.Visible = false end
+			end)
+		end
+	end
+end })
+espP:AddToggle({ Text = "Box", Flag = "esp_box", Callback = function(on) F.ESP.box = on end })
+espP:AddToggle({ Text = "Name", Flag = "esp_name", Callback = function(on) F.ESP.name = on end })
+espP:AddToggle({ Text = "Distance", Flag = "esp_dist", Callback = function(on) F.ESP.dist = on end })
+espP:AddToggle({ Text = "Chams", Flag = "esp_chams", Callback = function(on) F.ESP.chams = on end })
+espP:AddToggle({ Text = "Tracers", Flag = "esp_tracer", Callback = function(on) F.ESP.tracer = on end })
+
+espP2:AddToggle({ Text = "Team Check", Flag = "esp_team", Callback = function(on) F.ESP.teamCheck = on end })
+espP2:AddToggle({ Text = "Use Team Color", Flag = "esp_teamcol", Callback = function(on) F.ESP.teamColor = on end })
+espP2:AddSlider({ Text = "Max Distance", Flag = "esp_maxdist", Min = 50, Max = 1000, Default = 300,
+	Suffix = "m", Callback = function(v) F.ESP.maxDist = v end })
+espP2:AddColorPicker({ Text = "ESP Color", Flag = "esp_color", Default = COLORS.Red,
+	Callback = function(c) F.ESP.color = c end })
+
+local hasDrawing = (Drawing ~= nil and Drawing.new ~= nil)
+
+local function espObj(p)
+	local o = F.ESP.objs[p]
+	if o then return o end
+	o = {}
+	if hasDrawing then
+		o.box = Drawing.new("Square"); o.box.Thickness = 1; o.box.Filled = false; o.box.Visible = false
+		o.tracer = Drawing.new("Line"); o.tracer.Thickness = 1; o.tracer.Visible = false
+	end
+	F.ESP.objs[p] = o
+	return o
+end
+
+local function espClear(p)
+	local o = F.ESP.objs[p]
+	if not o then return end
+	pcall(function()
+		if o.box then o.box:Remove() end
+		if o.tracer then o.tracer:Remove() end
+		if o.hl then o.hl:Destroy() end
+		if o.bb then o.bb:Destroy() end
+	end)
+	F.ESP.objs[p] = nil
+end
+
+Library:Connect(Players.PlayerRemoving, function(p) espClear(p) end)
+
+Library:StartLoop("esp", RunService.RenderStepped, function()
+	if Library.Destroyed then return end
+	if not F.ESP.enabled then return end
+	local myc = getChar()
+	local myPos = myc and myc.HumanoidRootPart.Position
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then
+			local char = p.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local o = espObj(p)
+			local show = hrp and hum and hum.Health > 0
+			if show and F.ESP.teamCheck and p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then show = false end
+			if show and myPos and (hrp.Position - myPos).Magnitude > F.ESP.maxDist then show = false end
+
+			if show then
+				local col = espColorFor(p)
+				local sp, on = Camera:WorldToViewportPoint(hrp.Position)
+
+				-- box + tracer (Drawing, screen-space)
+				if o.box then
+					if F.ESP.box and on then
+						local h = math.clamp(1800 / sp.Z, 12, 900)
+						local w = h * 0.55
+						o.box.Size = Vector2.new(w, h)
+						o.box.Position = Vector2.new(sp.X - w / 2, sp.Y - h / 2)
+						o.box.Color = col
+						o.box.Visible = true
+					else
+						o.box.Visible = false
+					end
+				end
+				if o.tracer then
+					if F.ESP.tracer and on then
+						local vp = Camera.ViewportSize
+						o.tracer.From = Vector2.new(vp.X / 2, vp.Y)
+						o.tracer.To = Vector2.new(sp.X, sp.Y)
+						o.tracer.Color = col
+						o.tracer.Visible = true
+					else
+						o.tracer.Visible = false
+					end
+				end
+
+				-- chams
+				if F.ESP.chams then
+					if not o.hl or o.hl.Adornee ~= char then
+						pcall(function() if o.hl then o.hl:Destroy() end end)
+						o.hl = Instance.new("Highlight")
+						o.hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						o.hl.FillTransparency = 0.55
+						o.hl.Adornee = char
+						o.hl.Parent = char
+					end
+					o.hl.FillColor = col
+					o.hl.OutlineColor = col
+					o.hl.Enabled = true
+				elseif o.hl then
+					o.hl.Enabled = false
+				end
+
+				-- name / distance billboard
+				if F.ESP.name or F.ESP.dist then
+					if not o.bb or o.bb.Adornee ~= hrp then
+						pcall(function() if o.bb then o.bb:Destroy() end end)
+						o.bb = Instance.new("BillboardGui")
+						o.bb.Size = UDim2.new(0, 150, 0, 16)
+						o.bb.StudsOffset = Vector3.new(0, 3.2, 0)
+						o.bb.AlwaysOnTop = true
+						o.bb.Adornee = hrp
+						o.bb.Parent = hrp
+						o.lbl = create("TextLabel", { Parent = o.bb, BackgroundTransparency = 1,
+							Size = UDim2.new(1, 0, 1, 0), Font = FONT, TextSize = 12, TextStrokeTransparency = 0.4 })
+					end
+					local txt = ""
+					if F.ESP.name then txt = p.DisplayName or p.Name end
+					if F.ESP.dist and myPos then
+						local d = math.floor((hrp.Position - myPos).Magnitude)
+						txt = txt ~= "" and (txt .. "  [" .. d .. "m]") or (d .. "m")
+					end
+					o.lbl.Text = txt
+					o.lbl.TextColor3 = col
+					o.bb.Enabled = true
+				elseif o.bb then
+					o.bb.Enabled = false
+				end
+			else
+				if o.box then o.box.Visible = false end
+				if o.tracer then o.tracer.Visible = false end
+				if o.hl then o.hl.Enabled = false end
+				if o.bb then o.bb.Enabled = false end
+			end
+		end
+	end
+end)
+
+--== World ==--
+local worldPage = VisCat:AddTab("World")
+local wP  = worldPage:AddPanel("Lighting")
+local wP2 = worldPage:AddPanel("Camera")
+
+F.World = { fullbright = false, ambient = Color3.fromRGB(70, 70, 70), useAmbient = false,
+	brightness = 2, time = 14, useTime = false, fog = false, fogEnd = 100000, fogColor = Color3.fromRGB(180, 180, 190),
+	fov = 70, useFov = false, saved = nil }
+
+local function saveLighting()
+	if F.World.saved then return end
+	F.World.saved = {
+		Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
+		Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime,
+		FogEnd = Lighting.FogEnd, FogStart = Lighting.FogStart, FogColor = Lighting.FogColor,
+		GlobalShadows = Lighting.GlobalShadows,
+	}
+end
+local function restoreLighting()
+	if not F.World.saved then return end
+	for k, v in pairs(F.World.saved) do pcall(function() Lighting[k] = v end) end
+end
+
+wP:AddToggle({ Text = "Fullbright", Flag = "w_fullbright", Callback = function(on)
+	F.World.fullbright = on
+	saveLighting()
+	if on then
+		Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+		Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+		Lighting.Brightness = 3
+		Lighting.GlobalShadows = false
+	else
+		restoreLighting()
+	end
+end })
+wP:AddToggle({ Text = "Custom Ambient", Flag = "w_useambient", Callback = function(on)
+	F.World.useAmbient = on
+	saveLighting()
+	if on then
+		Lighting.Ambient = F.World.ambient
+		Lighting.OutdoorAmbient = F.World.ambient
+	elseif not F.World.fullbright then
+		restoreLighting()
+	end
+end })
+wP:AddColorPicker({ Text = "Ambient Color", Flag = "w_ambient", Default = Color3.fromRGB(70, 70, 70),
+	Callback = function(c)
+		F.World.ambient = c
+		if F.World.useAmbient then Lighting.Ambient = c; Lighting.OutdoorAmbient = c end
+	end })
+wP:AddSlider({ Text = "Brightness", Flag = "w_bright", Min = 0, Max = 8, Decimals = 1, Default = 2,
+	Callback = function(v)
+		F.World.brightness = v
+		saveLighting()
+		Lighting.Brightness = v
+	end })
+wP:AddToggle({ Text = "Custom Time", Flag = "w_usetime", Callback = function(on)
+	F.World.useTime = on
+	saveLighting()
+	if on then Lighting.ClockTime = F.World.time else restoreLighting() end
+end })
+wP:AddSlider({ Text = "Time Of Day", Flag = "w_time", Min = 0, Max = 24, Decimals = 1, Default = 14,
+	Suffix = "h", Callback = function(v)
+		F.World.time = v
+		if F.World.useTime then Lighting.ClockTime = v end
+	end })
+wP:AddToggle({ Text = "No Fog", Flag = "w_nofog", Callback = function(on)
+	F.World.fog = on
+	saveLighting()
+	if on then
+		Lighting.FogEnd = 100000
+		Lighting.FogStart = 100000
+	else
+		restoreLighting()
+	end
+end })
+
+wP2:AddToggle({ Text = "Custom FOV", Flag = "w_usefov", Callback = function(on)
+	F.World.useFov = on
+	if not on and Camera then Camera.FieldOfView = 70 end
+end })
+wP2:AddSlider({ Text = "Field Of View", Flag = "w_fov", Min = 40, Max = 120, Default = 70,
+	Callback = function(v)
+		F.World.fov = v
+		if F.World.useFov and Camera then Camera.FieldOfView = v end
+	end })
+
+-- FOV has to be re-applied: the game resets it on respawn/camera changes
+Library:StartLoop("world", RunService.RenderStepped, function()
+	if Library.Destroyed then return end
+	if F.World.useFov and Camera and Camera.FieldOfView ~= F.World.fov then
+		Camera.FieldOfView = F.World.fov
 	end
 end)
 
@@ -1825,7 +2210,7 @@ cfgP:AddButton({ Text = "Unload", Callback = function() Library:Destroy() end })
 --=====================================================================
 --  PLAYERLIST CATEGORY
 --=====================================================================
-local PLCat = Library:AddCategory("PlayerList", 3)
+local PLCat = Library:AddCategory("PlayerList", 5)
 local plPage = PLCat:AddTab("Players")
 local plP = plPage:AddPanel("Players In Server")
 local plScroll = plP:Scroll()
@@ -2002,6 +2387,15 @@ function Library:Destroy()
 	F.Ball.esp, F.Ball.chams, F.Ball.tracer, F.Ball.dist = false, false, false, false
 	F.Ball.trail, F.Ball.traj, F.Ball.glow, F.Ball.particles = false, false, false, false
 	F.Ball.rainbow, F.Ball.landing, F.Ball.hoops = false, false, false
+	F.ESP.enabled = false
+	pcall(function()
+		-- player ESP owns Drawing objects and instances parented into other
+		-- characters; both outlive the ScreenGui if not removed by hand
+		for p in pairs(F.ESP.objs) do espClear(p) end
+		F.ESP.objs = {}
+		restoreLighting()
+		if F.World.useFov and Camera then Camera.FieldOfView = 70 end
+	end)
 	pcall(function()
 		-- the ball visuals parent real instances into the ball / workspace, and
 		-- the trajectory spawns parts every frame — all of it has to go or it
