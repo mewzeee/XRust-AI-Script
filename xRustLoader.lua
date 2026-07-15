@@ -73,17 +73,54 @@ end
 --// ACCOUNT
 --//   UNKIE verifies the key before this file runs, so there is no login
 --//   and no auth call left in here. This table only carries the HWID for
---//   the account panel; userData stays nil, which fmtExpiry renders as
---//   "lifetime" (the real expiry is owned by the key system).
+--//   the account panel. The real expiry comes from the key system's verify
+--//   payload — see keyExpiry() below.
 --// ------------------------------------------------------------------
-local KeyAuth = {
-	hwid = getHWID(), userData = nil, loginKey = nil,
+local Account = {
+	hwid = getHWID(),
 }
 
--- pull the subscription expiry (unix seconds) out of a license response
-local function subExpiry(info)
-	if info and info.subscriptions and info.subscriptions[1] then
-		return tonumber(info.subscriptions[1].expiry)
+-- ISO-8601 ("2026-07-17T09:30:00.000Z") -> unix seconds. Luau has no strptime,
+-- so pull the fields out by hand. os.time() reads a table as LOCAL time, so the
+-- UTC offset is measured and added back on.
+local function isoToUnix(s)
+	if type(s) ~= "string" then return nil end
+	local y, mo, d, h, mi, sec = s:match("^(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
+	if not y then return nil end
+	local ok, t = pcall(os.time, { year = tonumber(y), month = tonumber(mo), day = tonumber(d),
+		hour = tonumber(h), min = tonumber(mi), sec = tonumber(sec) })
+	if not ok or not t then return nil end
+	local now = os.time()
+	local offset = os.difftime(now, os.time(os.date("!*t", now)))
+	return t + offset
+end
+
+-- Real expiry for the key the key system verified, in unix seconds.
+-- nil = no expiry found (rendered as "lifetime").
+--
+-- The key window stashes /verifyOpen's raw payload in getgenv().XRUST_KEY_INFO.
+-- That endpoint's success shape isn't documented, so every plausible field name
+-- is tried: an absolute timestamp first, then a relative "minutes remaining".
+-- (The REST API exposes expires_at/validity_minutes properly, but it needs an
+-- admin bearer token that must never ship inside a client script.)
+local function keyExpiry()
+	local info = rawget(getgenv(), "XRUST_KEY_INFO")
+	if type(info) ~= "table" then return nil end
+	local data = (type(info.key) == "table" and info.key) or (type(info.data) == "table" and info.data) or info
+
+	for _, k in ipairs({ "expires_at", "expiresAt", "expiry", "expires", "valid_until", "validUntil" }) do
+		local v = data[k]
+		if type(v) == "number" and v > 0 then return v end
+		if type(v) == "string" then
+			local n = tonumber(v)
+			if n and n > 100000000 then return n end     -- unix seconds as a string
+			local iso = isoToUnix(v)
+			if iso then return iso end
+		end
+	end
+	for _, k in ipairs({ "validity_minutes", "validityMinutes", "minutes_left", "minutesLeft", "time_left" }) do
+		local v = tonumber(data[k])
+		if v and v > 0 then return os.time() + v * 60 end
 	end
 	return nil
 end
@@ -317,7 +354,7 @@ do
 	label(hero, "Premium script hub — pick a script under a tab, read about it, then inject.", {
 		Color = Theme.TextOff, Size = 13, Wrap = true, Sz = UDim2.new(1, -32, 0, 34), Pos = UDim2.new(0, 16, 0, 50) }).ZIndex = 12
 
-	local info = card(homePage, "Your Account", { Sz = UDim2.new(1, 0, 0, 100), Pos = UDim2.new(0, 0, 0, 108) })
+	local info = card(homePage, "Your Account", { Sz = UDim2.new(1, 0, 0, 126), Pos = UDim2.new(0, 0, 0, 108) })
 	local function infoRow(order, k)
 		local y = 36 + (order - 1) * 26
 		label(info, k, { Color = Theme.TextOff, Size = 13, Sz = UDim2.new(0, 110, 0, 20), Pos = UDim2.new(0, 16, 0, y) }).ZIndex = 12
@@ -327,8 +364,11 @@ do
 	end
 	homeVals.user   = infoRow(1, "Name")       -- their display name (or "User"), never the licence key
 	homeVals.expiry = infoRow(2, "Expires")
+	homeVals.hwid   = infoRow(3, "HWID")       -- shown so users can quote it when asking for a reset
+	homeVals.hwid.Text = Account.hwid
+	homeVals.hwid.TextTruncate = Enum.TextTruncate.AtEnd
 
-	local news = card(homePage, "News", { Sz = UDim2.new(1, 0, 1, -216), Pos = UDim2.new(0, 0, 0, 216) })
+	local news = card(homePage, "News", { Sz = UDim2.new(1, 0, 1, -242), Pos = UDim2.new(0, 0, 0, 242) })
 	label(news, "• Welcome! XRust Universal is live.\n• Report bugs and request games in the community.\n• More scripts coming to the empty tabs soon.", {
 		Color = Theme.TextOff, Size = 13, Wrap = true, YAlign = Enum.TextYAlignment.Top,
 		Sz = UDim2.new(1, -32, 1, -40), Pos = UDim2.new(0, 16, 0, 34) }).ZIndex = 12
@@ -462,13 +502,56 @@ do
 		return box
 	end
 
-	-- NOTE: the old "License / Activate" card lived here. It called KeyAuth
-	-- directly, which no longer exists — the key system verifies your key
-	-- before this hub ever loads, so there is nothing to claim in-hub.
-	-- To re-key, users just re-run the get-key flow and execute again.
+	-- License card: claim a key onto THIS machine's HWID.
+	-- Verifying is what binds a key to a HWID (the key system records it as
+	-- bound_by="verify"), so claiming is just a re-verify with the new key. How
+	-- many machines one key may cover is the provider's hwid_limit, enforced
+	-- server-side — this card only reports what comes back.
+	local licCard = card(setPage, "License", { Sz = UDim2.new(1, 0, 0, 150) })
+	label(licCard, "Claim a different key on this HWID. Claiming replaces the key this session is using and re-binds it to this machine.", {
+		Color = Theme.TextOff, Size = 12, Wrap = true, YAlign = Enum.TextYAlignment.Top,
+		Sz = UDim2.new(1, -28, 0, 32), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 14
+	local licStatus
+	fieldRow(licCard, 74, "Input License", "Claim", function(box, btn)
+		local key = box.Text:gsub("^%s+", ""):gsub("%s+$", "")
+		if key == "" then
+			licStatus.Text = "Enter a key first."; licStatus.TextColor3 = Theme.Bad; return
+		end
+		local J = rawget(getgenv(), "XRUST_JUNKIE")
+		if type(J) ~= "table" or type(J.check_key) ~= "function" then
+			licStatus.Text = "Key system unavailable — hub was run outside the key flow."
+			licStatus.TextColor3 = Theme.Bad; return
+		end
+		btn.Text = "..."; licStatus.Text = "Verifying..."; licStatus.TextColor3 = Theme.TextOff
+		task.spawn(function()
+			local ok, res = pcall(function() return J.check_key(key) end)
+			btn.Text = "Claim"
+			if not ok then
+				licStatus.Text = "Error: " .. tostring(res); licStatus.TextColor3 = Theme.Bad; return
+			end
+			if res and res.valid then
+				getgenv().XRUST_KEY = key
+				getgenv().XRUST_KEY_INFO = res
+				getgenv().SCRIPT_KEY = key
+				-- same file the key window reads on next launch
+				pcall(function()
+					if typeof(writefile) == "function" then writefile("verified_key.txt", key) end
+				end)
+				refreshAccount()
+				licStatus.Text = "Claimed — bound to this HWID."; licStatus.TextColor3 = Theme.Good
+			else
+				local m = tostring((res and (res.error or res.message)) or "Invalid key.")
+				if m:upper():find("HWID") then m = "HWID limit reached — create a ticket in the Discord." end
+				licStatus.Text = m; licStatus.TextColor3 = Theme.Bad
+			end
+		end)
+	end)
+	licStatus = label(licCard, "", { Color = Theme.TextOff, Size = 12, Wrap = true,
+		Sz = UDim2.new(1, -28, 0, 24), Pos = UDim2.new(0, 14, 0, 118) })
+	licStatus.ZIndex = 14
 
 	-- Profile card: change the greeting name
-	local proCard = card(setPage, "Profile", { Sz = UDim2.new(1, 0, 0, 122), Pos = UDim2.new(0, 0, 0, 0) })
+	local proCard = card(setPage, "Profile", { Sz = UDim2.new(1, 0, 0, 122), Pos = UDim2.new(0, 0, 0, 160) })
 	label(proCard, "Set a display name — Home greets you with it instead of the default.", {
 		Color = Theme.TextOff, Size = 12, Wrap = true, YAlign = Enum.TextYAlignment.Top,
 		Sz = UDim2.new(1, -28, 0, 30), Pos = UDim2.new(0, 14, 0, 34) }).ZIndex = 14
@@ -523,11 +606,12 @@ end
 
 -- assigns the forward-declared refreshAccount: sync every account label + greeting
 refreshAccount = function()
-	local expText = fmtExpiry(subExpiry(KeyAuth.userData))
+	local expText = fmtExpiry(keyExpiry())
 	expiryLbl.Text = "Expires: " .. expText
 	expiryLbl.TextColor3 = (expText == "expired") and Theme.Bad or Theme.TextHdr   -- white
 	if homeVals.user then homeVals.user.Text = greetName() end   -- display name or "User", never the key
 	if homeVals.expiry then homeVals.expiry.Text = expText end
+	if homeVals.hwid then homeVals.hwid.Text = Account.hwid end
 	updateGreeting()
 end
 
