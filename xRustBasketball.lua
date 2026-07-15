@@ -1039,8 +1039,21 @@ end
 --  BALL  (shared: everything below needs to find the basketball)
 --=====================================================================
 -- The ball is parented to the character while held, and loose in workspace
--- otherwise. Cache the last one we saw so ESP/trail survive the hand-off.
+-- otherwise.
+--
+-- PERF: Workspace:GetDescendants() allocates an array of EVERY instance in the
+-- game. Running that per-frame is what made the menu crawl whenever you weren't
+-- holding the ball (holding it hit the early return, which is why it went smooth
+-- the moment you picked one up). So: use the cached ball while it's still
+-- parented, try a cheap shallow pass first, and only fall back to the full walk
+-- a couple of times a second.
 local lastBall = nil
+local nextDeepScan = 0
+
+local function isBall(d)
+	return d:IsA("BasePart") and (d.Name == "Basketball" or d.Name == "Ball")
+end
+
 local function findBall()
 	local c = LocalPlayer.Character
 	local held = c and c:FindFirstChild("Basketball")
@@ -1048,12 +1061,24 @@ local function findBall()
 		lastBall = (held:IsA("BasePart") and held) or held:FindFirstChildWhichIsA("BasePart")
 		return lastBall
 	end
-	-- loose ball: nearest thing named Basketball in workspace
+
+	-- cached ball still in the world? nothing to search for.
+	if lastBall and lastBall.Parent then return lastBall end
+
+	-- cheap pass: loose balls almost always sit directly under workspace
+	for _, d in ipairs(Workspace:GetChildren()) do
+		if isBall(d) then lastBall = d; return d end
+	end
+
+	-- expensive pass, throttled. A ball doesn't appear and vanish faster than this.
+	if os.clock() < nextDeepScan then return nil end
+	nextDeepScan = os.clock() + 0.5
+
 	local best, bestD = nil, math.huge
 	local myc = getChar()
 	local myPos = myc and myc.HumanoidRootPart.Position or Vector3.zero
 	for _, d in ipairs(Workspace:GetDescendants()) do
-		if d:IsA("BasePart") and d.Name == "Basketball" then
+		if isBall(d) then
 			local dist = (d.Position - myPos).Magnitude
 			if dist < bestD then best, bestD = d, dist end
 		end
@@ -1236,7 +1261,12 @@ local bvP2 = bvPage:AddPanel("Trail / Trajectory")
 F.Ball = { esp = false, espColor = COLORS.Orange or COLORS.Red, chams = false, tracer = false, dist = false,
 	trail = false, trailColor = COLORS.Orange or COLORS.Red, trailLen = 1.2,
 	traj = false, trajColor = COLORS.Cyan, trajSteps = 40, trajTime = 1.6,
-	hl = nil, bb = nil, distLbl = nil, trailObj = nil, trajParts = {} }
+	glow = false, glowRange = 14, glowBright = 2,
+	particles = false, rainbow = false, rainbowSpeed = 1,
+	landing = false, landingColor = COLORS.Green or COLORS.Cyan,
+	hoops = false, hoopColor = COLORS.Purple,
+	hl = nil, bb = nil, distLbl = nil, trailObj = nil, trajParts = {},
+	light = nil, emitter = nil, landRing = nil, hoopHls = {} }
 
 bvP:AddToggle({ Text = "Ball ESP", Flag = "ball_esp", Callback = function(on) F.Ball.esp = on end })
 bvP:AddToggle({ Text = "Ball Chams", Flag = "ball_chams", Callback = function(on) F.Ball.chams = on end })
@@ -1261,12 +1291,56 @@ bvP2:AddSlider({ Text = "Trajectory Steps", Flag = "ball_trajsteps", Min = 10, M
 	Callback = function(v) F.Ball.trajSteps = v end })
 bvP2:AddColorPicker({ Text = "Trajectory Color", Flag = "ball_trajcol", Default = COLORS.Cyan,
 	Callback = function(c) F.Ball.trajColor = c end })
+bvP2:AddToggle({ Text = "Landing Marker", Flag = "ball_landing", Callback = function(on)
+	F.Ball.landing = on
+	if not on and F.Ball.landRing then F.Ball.landRing.Visible = false end
+end })
+bvP2:AddColorPicker({ Text = "Landing Color", Flag = "ball_landcol", Default = COLORS.Green or COLORS.Cyan,
+	Callback = function(c) F.Ball.landingColor = c end })
+
+--== Effects ==--
+local fxP = bvPage:AddPanel("Effects")
+fxP:AddToggle({ Text = "Ball Glow", Flag = "ball_glow", Callback = function(on)
+	F.Ball.glow = on
+	if not on and F.Ball.light then F.Ball.light.Enabled = false end
+end })
+fxP:AddSlider({ Text = "Glow Range", Flag = "ball_glowrange", Min = 4, Max = 40, Default = 14,
+	Callback = function(v) F.Ball.glowRange = v end })
+fxP:AddSlider({ Text = "Glow Brightness", Flag = "ball_glowbright", Min = 0.5, Max = 6, Decimals = 1, Default = 2,
+	Callback = function(v) F.Ball.glowBright = v end })
+fxP:AddToggle({ Text = "Ball Particles", Flag = "ball_particles", Callback = function(on)
+	F.Ball.particles = on
+	if not on and F.Ball.emitter then F.Ball.emitter.Enabled = false end
+end })
+fxP:AddToggle({ Text = "Rainbow Ball", Flag = "ball_rainbow", Callback = function(on) F.Ball.rainbow = on end })
+fxP:AddSlider({ Text = "Rainbow Speed", Flag = "ball_rainbowspd", Min = 0.2, Max = 5, Decimals = 1, Default = 1,
+	Suffix = "x", Callback = function(v) F.Ball.rainbowSpeed = v end })
+fxP:AddToggle({ Text = "Hoop ESP", Flag = "ball_hoops", Callback = function(on)
+	F.Ball.hoops = on
+	if not on then
+		for _, h in pairs(F.Ball.hoopHls) do pcall(function() h.Enabled = false end) end
+	end
+end })
+fxP:AddColorPicker({ Text = "Hoop Color", Flag = "ball_hoopcol", Default = COLORS.Purple,
+	Callback = function(c) F.Ball.hoopColor = c end })
 
 local ballTracer = Drawing and Drawing.new and Drawing.new("Line") or nil
 if ballTracer then ballTracer.Thickness = 1; ballTracer.Visible = false end
+local nextHoopScan = 0
 
 Library:StartLoop("ballvis", RunService.RenderStepped, function()
 	if Library.Destroyed then return end
+	-- with every ball visual off there is nothing to draw, so don't even look for
+	-- the ball — this loop should cost nothing when the tab is untouched
+	if not (F.Ball.esp or F.Ball.chams or F.Ball.tracer or F.Ball.dist
+		or F.Ball.trail or F.Ball.traj or F.Ball.glow or F.Ball.particles
+		or F.Ball.rainbow or F.Ball.landing or F.Ball.hoops) then
+		if ballTracer and ballTracer.Visible then ballTracer.Visible = false end
+		if F.Ball.hl and F.Ball.hl.Enabled then F.Ball.hl.Enabled = false end
+		if F.Ball.bb and F.Ball.bb.Enabled then F.Ball.bb.Enabled = false end
+		if F.Ball.trailObj and F.Ball.trailObj.Enabled then F.Ball.trailObj.Enabled = false end
+		return
+	end
 	local ball = findBall()
 
 	-- highlight / chams
@@ -1382,6 +1456,116 @@ Library:StartLoop("ballvis", RunService.RenderStepped, function()
 	elseif #F.Ball.trajParts > 0 and not F.Ball.traj then
 		for _, p in ipairs(F.Ball.trajParts) do pcall(function() p:Destroy() end) end
 		F.Ball.trajParts = {}
+	end
+
+	-- glow
+	if F.Ball.glow and ball then
+		if not F.Ball.light or F.Ball.light.Parent ~= ball then
+			pcall(function() if F.Ball.light then F.Ball.light:Destroy() end end)
+			F.Ball.light = Instance.new("PointLight")
+			F.Ball.light.Parent = ball
+		end
+		F.Ball.light.Color = F.Ball.espColor
+		F.Ball.light.Range = F.Ball.glowRange
+		F.Ball.light.Brightness = F.Ball.glowBright
+		F.Ball.light.Enabled = true
+	elseif F.Ball.light then
+		F.Ball.light.Enabled = false
+	end
+
+	-- particles
+	if F.Ball.particles and ball then
+		if not F.Ball.emitter or F.Ball.emitter.Parent ~= ball then
+			pcall(function() if F.Ball.emitter then F.Ball.emitter:Destroy() end end)
+			local e = Instance.new("ParticleEmitter")
+			e.Texture = "rbxassetid://241650934"
+			e.Rate = 40
+			e.Lifetime = NumberRange.new(0.4, 0.8)
+			e.Speed = NumberRange.new(0.5, 2)
+			e.SpreadAngle = Vector2.new(180, 180)
+			e.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 0) })
+			e.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+			e.Parent = ball
+			F.Ball.emitter = e
+		end
+		F.Ball.emitter.Color = ColorSequence.new(F.Ball.espColor)
+		F.Ball.emitter.Enabled = true
+	elseif F.Ball.emitter then
+		F.Ball.emitter.Enabled = false
+	end
+
+	-- rainbow: drive espColor/trailColor off a hue cycle, so every effect that
+	-- reads them (highlight, glow, particles, trail, tracer) cycles together
+	if F.Ball.rainbow then
+		local h = (os.clock() * 0.15 * F.Ball.rainbowSpeed) % 1
+		local c = Color3.fromHSV(h, 1, 1)
+		F.Ball.espColor = c
+		F.Ball.trailColor = c
+	end
+
+	-- landing marker: raycast straight down from the end of the predicted arc
+	if F.Ball.landing and ball then
+		local vel = ball.AssemblyLinearVelocity
+		if vel.Magnitude > 4 then
+			if not F.Ball.landRing or not F.Ball.landRing.Parent then
+				pcall(function() if F.Ball.landRing then F.Ball.landRing:Destroy() end end)
+				local p = Instance.new("Part")
+				p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+				p.Material = Enum.Material.Neon
+				p.Shape = Enum.PartType.Cylinder
+				p.Size = Vector3.new(0.15, 3, 3)
+				p.Parent = Workspace
+				F.Ball.landRing = p
+			end
+			-- walk the arc until it drops below the ball's start height, then drop a ray
+			local g = Workspace.Gravity
+			local pos, hit = ball.Position, nil
+			for i = 1, 60 do
+				local t = i * 0.05
+				local pt = ball.Position + vel * t + Vector3.new(0, -0.5 * g * t * t, 0)
+				local rp = RaycastParams.new()
+				rp.FilterType = Enum.RaycastFilterType.Exclude
+				rp.FilterDescendantsInstances = { LocalPlayer.Character, ball, F.Ball.landRing }
+				local res = Workspace:Raycast(pos, pt - pos, rp)
+				if res then hit = res.Position; break end
+				pos = pt
+			end
+			if hit then
+				F.Ball.landRing.CFrame = CFrame.new(hit + Vector3.new(0, 0.08, 0)) * CFrame.Angles(0, 0, math.rad(90))
+				F.Ball.landRing.Color = F.Ball.landingColor
+				F.Ball.landRing.Transparency = 0.3
+			else
+				F.Ball.landRing.Transparency = 1
+			end
+		elseif F.Ball.landRing then
+			F.Ball.landRing.Transparency = 1
+		end
+	elseif F.Ball.landRing then
+		F.Ball.landRing.Transparency = 1
+	end
+
+	-- hoop ESP. Hoops don't move or respawn, so re-scanning per-frame is pure
+	-- waste — find them once a second and let the highlights ride.
+	if F.Ball.hoops and os.clock() >= nextHoopScan then
+		nextHoopScan = os.clock() + 1
+		for _, d in ipairs(Workspace:GetChildren()) do
+			if d:IsA("Model") and (d.Name:lower():find("hoop") or d.Name:lower():find("rim") or d.Name:lower():find("net")) then
+				local hl = F.Ball.hoopHls[d]
+				if not hl or not hl.Parent then
+					hl = Instance.new("Highlight")
+					hl.FillTransparency = 0.7
+					hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+					hl.Adornee = d
+					hl.Parent = d
+					F.Ball.hoopHls[d] = hl
+				end
+				hl.FillColor = F.Ball.hoopColor
+				hl.OutlineColor = F.Ball.hoopColor
+				hl.Enabled = true
+			end
+		end
 	end
 end)
 
@@ -1816,7 +2000,8 @@ function Library:Destroy()
 	F.Green.enabled = false
 	F.Guard.enabled = false
 	F.Ball.esp, F.Ball.chams, F.Ball.tracer, F.Ball.dist = false, false, false, false
-	F.Ball.trail, F.Ball.traj = false, false
+	F.Ball.trail, F.Ball.traj, F.Ball.glow, F.Ball.particles = false, false, false, false
+	F.Ball.rainbow, F.Ball.landing, F.Ball.hoops = false, false, false
 	pcall(function()
 		-- the ball visuals parent real instances into the ball / workspace, and
 		-- the trajectory spawns parts every frame — all of it has to go or it
@@ -1824,8 +2009,13 @@ function Library:Destroy()
 		if F.Ball.hl then F.Ball.hl:Destroy() end
 		if F.Ball.bb then F.Ball.bb:Destroy() end
 		if F.Ball.trailObj then F.Ball.trailObj:Destroy() end
+		if F.Ball.light then F.Ball.light:Destroy() end
+		if F.Ball.emitter then F.Ball.emitter:Destroy() end
+		if F.Ball.landRing then F.Ball.landRing:Destroy() end
 		for _, p in ipairs(F.Ball.trajParts) do p:Destroy() end
 		F.Ball.trajParts = {}
+		for _, h in pairs(F.Ball.hoopHls) do h:Destroy() end
+		F.Ball.hoopHls = {}
 		if F.Guard.hl then F.Guard.hl:Destroy() end
 		if ballTracer then ballTracer:Remove() end
 	end)

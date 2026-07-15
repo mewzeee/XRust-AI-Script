@@ -352,14 +352,14 @@ end
 -- entry in SCRIPTS - no new tab, no new layout.
 local SCRIPTS = {
 	{
-		name = "Universal", sub = "Most Roblox shooters", title = "XRust Universal", url = SCRIPT_URL,
+		name = "Universal", title = "XRust Universal", url = SCRIPT_URL,
 		desc = "A client-side aim & visual hub that works in most Roblox shooters.\n\nAimbot, rage bot, triggerbot, full ESP, FOV circle, snaplines, target HUD, anti-aim, fly, and more — all configurable.",
 		changelog = "v1.0\n• Aim suite, ESP, FOV, snaplines.\n• Target renderer + jump circles as true 3D FX.\n• Anti-aim, camera bypass, config system.",
 	},
 	{
-		name = "Basketball Legends", sub = "Auto green · guard · ESP", title = "Basketball Legends", url = BASKETBALL_URL,
+		name = "Basketball Legends", title = "Basketball Legends", url = BASKETBALL_URL,
 		desc = "Auto Green, ball ESP and guarding tools for Basketball Legends.\n\nAuto Green drives the game's own shot meter and can ramp it smoothly rather than snapping. Rage Green drops you under the floor on release so nobody can contest.",
-		changelog = "v1.1\n• Auto Green: smooth ramp, rage drop, jitter.\n• Ball ESP + shot trail and trajectory preview.\n• Auto Guard: prediction, ball-carrier only, face lock.",
+		changelog = "v1.2\n• Auto Green: smooth ramp, rage drop, jitter.\n• Ball ESP, trail, trajectory, glow, particles, rainbow.\n• Landing marker + hoop ESP.\n• Auto Guard: prediction, ball-carrier only, face lock.",
 	},
 }
 
@@ -439,8 +439,8 @@ do
 		border(row, STROKE, 1)
 		local accent = create("Frame", { Parent = row, Size = UDim2.new(0, 2, 1, -12), Position = UDim2.new(0, 0, 0, 6),
 			BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, ZIndex = 15 })
+		-- name only, vertically centred in the same 62px row (no subtitle line)
 		label(row, entry.name, { Color = Theme.TextHdr, Size = 13, Sz = UDim2.new(1, -20, 0, 16), Pos = UDim2.new(0, 12, 0, 9) }).ZIndex = 15
-		label(row, entry.sub, { Color = Theme.TextOff, Size = 11.5, Sz = UDim2.new(1, -20, 0, 14), Pos = UDim2.new(0, 12, 0, 26) }).ZIndex = 15
 		local btn = create("TextButton", { Parent = row, AutoButtonColor = false, Size = UDim2.new(0, 74, 0, 20),
 			Position = UDim2.new(1, -84, 1, -26), BackgroundColor3 = Color3.fromRGB(22, 22, 26), BorderSizePixel = 0,
 			Font = FONT, TextSize = 11.5, TextColor3 = Theme.TextOff, Text = "Select", ZIndex = 15 })
