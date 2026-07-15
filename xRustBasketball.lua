@@ -1092,10 +1092,23 @@ local function courtsFolder()
 	return g and g:FindFirstChild("Courts")
 end
 
--- the court whose origin is nearest us = the one we're playing on
+-- Which court we're on. The game just tells us: LocalPlayer has a "Court"
+-- attribute (an index) while in a match. Fall back to nearest-pivot when it's
+-- absent (lobby / practice), since that's the only signal then.
 local function currentCourt(from)
 	local courts = courtsFolder()
 	if not courts then return nil end
+
+	local idx = LocalPlayer:GetAttribute("Court")
+	if idx ~= nil then
+		local byName = courts:FindFirstChild("Court" .. tostring(idx))
+			or courts:FindFirstChild(tostring(idx))
+		if byName then return byName end
+		local kids = courts:GetChildren()
+		local n = tonumber(idx)
+		if n and kids[n] then return kids[n] end
+	end
+
 	local best, bestD = nil, math.huge
 	for _, c in ipairs(courts:GetChildren()) do
 		local ok, pivot = pcall(function() return c:GetPivot().Position end)
@@ -1930,6 +1943,26 @@ local function attachClone(src, anchor, tagName)
 	return #parts
 end
 
+-- The tree is nested — <Skin>.CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.<parts> —
+-- so a plain FindFirstChild can land on an outer wrapper. Take the DEEPEST node
+-- with that name that actually has BaseParts directly under it.
+local function deepestHolder(root, name)
+	local best, bestDepth = nil, -1
+	local function walk(node, depth)
+		if node.Name == name then
+			for _, k in ipairs(node:GetChildren()) do
+				if k:IsA("BasePart") then
+					if depth > bestDepth then best, bestDepth = node, depth end
+					break
+				end
+			end
+		end
+		for _, k in ipairs(node:GetChildren()) do walk(k, depth + 1) end
+	end
+	walk(root, 0)
+	return best or root:FindFirstChild(name, true)
+end
+
 local function applyPreset(name)
 	clearSkinClones()
 	if name == "None" then return end
@@ -1941,8 +1974,27 @@ local function applyPreset(name)
 
 	local n = 0
 	-- ball meshes
-	local holder = skin:FindFirstChild("CUSTOM_SKIN_HOLDER", true)
-	if holder then n = n + attachClone(holder, ball, SKIN_TAG) end
+	local holder = deepestHolder(skin, "CUSTOM_SKIN_HOLDER")
+	if holder then
+		n = n + attachClone(holder, ball, SKIN_TAG)
+		-- templates in ReplicatedStorage are often left fully transparent and
+		-- faded in by the game's own script; a straight clone would then be
+		-- invisible and look like nothing happened
+		local attached = ball:FindFirstChild(SKIN_TAG)
+		if attached then
+			local allHidden = true
+			for _, d in ipairs(attached:GetDescendants()) do
+				if d:IsA("BasePart") and d.Transparency < 0.95 then allHidden = false break end
+			end
+			if attached:IsA("BasePart") and attached.Transparency < 0.95 then allHidden = false end
+			if allHidden then
+				for _, d in ipairs(attached:GetDescendants()) do
+					if d:IsA("BasePart") then d.Transparency = 0 end
+				end
+				if attached:IsA("BasePart") then attached.Transparency = 0 end
+			end
+		end
+	end
 
 	-- Retexture the ball itself. CUSTOM_SKIN_HOLDER only carries the ADD-ON
 	-- geometry (Spikes/Grid/LightA...); the ball's own look is its SpecialMesh,
@@ -1981,8 +2033,12 @@ local function applyPreset(name)
 		end
 	end
 
+	-- say exactly what happened, so a skin that "does nothing" is diagnosable
+	-- instead of silent
+	local hp = holder and holder:GetFullName() or "NOT FOUND"
+	warn(("[XRust] skin '%s': holder=%s  attached=%d parts  ball=%s"):format(name, hp, n, ball:GetFullName()))
 	if n == 0 then
-		Library:Notify("Skin", "'" .. name .. "' had no parts to attach.", 3)
+		Library:Notify("Skin", "'" .. name .. "' had no parts to attach — see console.", 4)
 	else
 		Library:Notify("Skin", ("Applied %s (%d parts)."):format(name, n), 2, "good")
 	end
@@ -2122,11 +2178,23 @@ skP2:AddButton({ Text = "Copy Current IDs", Callback = function()
 	Library:Notify("Skin", "Copied the ball's current IDs.", 3, "good")
 end })
 
+local skinBall = nil
 Library:StartLoop("skin", RunService.Heartbeat, function()
 	if not F.Skin.enabled or Library.Destroyed then return end
 	local m, b = ballMesh()
 	if not (m and b) then return end
 	rememberDefaults()
+
+	-- The ball you hold is a DIFFERENT instance from the one on the rack, and
+	-- the game hands you a new one each possession. Re-apply whenever it
+	-- changes, otherwise the skin sits on whatever ball happened to be found
+	-- when you first ticked the box.
+	if F.Skin.preset ~= "None" and b ~= skinBall then
+		skinBall = b
+		if not b:FindFirstChild(SKIN_TAG) then
+			task.spawn(function() pcall(applyPreset, F.Skin.preset) end)
+		end
+	end
 
 	local tex = texUrl(F.Skin.texture)
 	if tex and m.TextureId ~= tex then pcall(function() m.TextureId = tex end) end

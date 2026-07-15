@@ -1,0 +1,387 @@
+Basketball Legends dump — 2026-07-15 20:45:14 UTC
+place: 14386691987
+
+=== ReplicatedStorage.Assets — TOP LEVEL ===
+Animations_R6                      <Folder      >  0 children
+FanCosmetic                        <Folder      >  5 children
+Fans                               <Folder      >  4 children
+Banners                            <Folder      >  77 children
+EmoteItems                         <Folder      >  131 children
+CaseModels                         <Folder      >  68 children
+Animations_NPC                     <Folder      >  8 children
+MapAssets                          <Folder      >  8 children
+Ball                               <Folder      >  203 children
+Animations_R15                     <Folder      >  249 children
+StreakEffects                      <Folder      >  12 children
+Effects                            <Folder      >  484 children
+Lighting                           <Folder      >  1 children
+ExtraAnims                         <Folder      >  2 children
+Cutscene                           <Folder      >  5 children
+Animations_GENERAL                 <Folder      >  7 children
+Misc                               <Folder      >  36 children
+
+=== SKIN / EFFECT ASSET IDS ===
+
+-- ReplicatedStorage.Assets.FanCosmetic --
+  s.FanCosmetic.Hair.Beautiful Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=16627494
+  s.FanCosmetic.Hair.Beautiful Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=17877254
+  s.FanCosmetic.Hair.Beautiful Hair 3.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=232752887
+  .Assets.FanCosmetic.Hair.Crazy Hair.Mesh mesh=http://www.roblox.com/asset/?id=248341525  tex=http://www.roblox.com/asset/?id=248261757
+  sets.FanCosmetic.Hair.Dreads.SpecialMesh mesh=rbxassetid://4566683953          tex=http://www.roblox.com/asset/?id=4577701741
+  .Assets.FanCosmetic.Hair.Messy Hair.Mesh mesh=http://www.roblox.com/asset/?id=26400959 tex=http://www.roblox.com/asset/?id=26400954
+  e.Assets.FanCosmetic.Hair.Nerd Hair.Mesh mesh=http://www.roblox.com/asset/?id=29938421 tex=http://www.roblox.com/asset/?id=29938532
+  ssets.FanCosmetic.Hair.Scene Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=76056263 tex=http://www.roblox.com/asset/?id=323471838
+  ssets.FanCosmetic.Hair.Scene Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=76056263 tex=http://www.roblox.com/asset/?id=76055088
+  rage.Assets.FanCosmetic.Hat.Glasses.Mesh mesh=http://www.roblox.com/asset/?id=14356597 tex=
+  torage.Assets.FanCosmetic.Misc.Sign.Mesh mesh=http://www.roblox.com/asset/?id=15631335 tex=http://www.roblox.com/asset/?id=14021832108
+  rage.Assets.FanCosmetic.Long Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=13070796 tex=http://www.roblox.com/asset/?id=13070807
+  rage.Assets.FanCosmetic.Long Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=13070796 tex=http://www.roblox.com/asset/?id=13694600
+
+-- ReplicatedStorage.Assets.Ball --
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightB mesh=rbxassetid://15582551984         tex=
+  TOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Wired mesh=rbxassetid://15582552090         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightA mesh=rbxassetid://15582551857         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightC mesh=rbxassetid://15582552168         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Spikes mesh=rbxassetid://15986950110         tex=
+  STOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Grid mesh=rbxassetid://15986759551         tex=
+  _HOLDER.CUSTOM_SKIN_HOLDER.Pumpkin Inner mesh=rbxassetid://113654461020415     tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.Pumpkin Main mesh=rbxassetid://106172859812846     tex=
+  all.Dragoneye.CUSTOM_AURA.Head.Part.Mesh mesh=rbxassetid://14536927547         tex=rbxassetid://140373351368689
+  KIN_HOLDER.CUSTOM_SKIN_HOLDER.Part.Decal decal=rbxassetid://104753375219322
+  l.TheGhoul.CUSTOM_AURA.LowerTorso.Circle mesh=rbxassetid://131441477649409     tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.001 mesh=rbxassetid://81271660309307      tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.002 mesh=rbxassetid://95355832744309      tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.004 mesh=rbxassetid://133281049504660     tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  s.Ball.SpiritKing.CUSTOM_AURA.Head.Crown mesh=rbxassetid://4629396661          tex=
+  l.SpiritKing.CUSTOM_AURA.UpperTorso.Wing mesh=rbxassetid://4629427529          tex=
+  ll.SpiritKing.CUSTOM_AURA.RightHand.Claw mesh=rbxassetid://4629396525          tex=
+  all.SpiritKing.CUSTOM_AURA.LeftHand.Claw mesh=rbxassetid://4629396525          tex=
+  TOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Crown mesh=rbxassetid://4629396661          tex=
+  STOM_AURA.UpperTorso.Gear 5 Cloud Inside mesh=rbxassetid://78575657476277      tex=
+  MaySkin14.CUSTOM_AURA.UpperTorso.Outside mesh=rbxassetid://82341732383276      tex=
+
+-- ReplicatedStorage.Assets.StreakEffects --
+  (StreakEffects: nothing with a texture)
+
+-- ReplicatedStorage.Assets.Effects --
+  licatedStorage.Assets.Effects.Frozen.Ice mesh=rbxassetid://1504522132          tex=
+  age.Assets.Effects.Airstrike.Rocket.Mesh mesh=http://roblox.com/asset/?id=2251534 tex=
+  torage.Assets.Effects.Cheese.Cheese.Mesh mesh=http://www.roblox.com/asset/?id=1090700 tex=http://www.roblox.com/asset/?id=1090703
+  .Assets.Effects.MeteorStrike.Meteor.Mesh mesh=rbxassetid://14536927547         tex=rbxassetid://14554890555
+  rimsonEclipse.Forcefield.ForceField.Mesh mesh=rbxassetid://2909677195          tex=rbxassetid://2909669397
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ects.ApiBiru.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  e.Assets.Effects.XMarks.EffectBox.Holder mesh=rbxassetid://5610952160          tex=http://www.roblox.com/asset/?id=6887040
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  entalCascade.EffectBox.Rocks.GroundRocks mesh=rbxassetid://9196645719          tex=
+  ffects.MagicDragon.EffectBox.Dragon.Head mesh=rbxassetid://6980699164          tex=
+  cts.MagicDragon.EffectBox.Dragon.Outline mesh=rbxassetid://6980699651          tex=
+  Effects.MagicDragon.EffectBox.Dragon.Eye mesh=rbxassetid://6980699332          tex=
+  ssets.Effects.Zero.EffectBox.Shockwave.  mesh=rbxassetid://5610952160          tex=http://www.roblox.com/asset/?id=6887040
+  llShrine.ShrineBox.Shrine.Shrine Pillars mesh=rbxassetid://18980527019         tex=
+  lShrine.ShrineBox.Shrine.Shrine Pillar 2 mesh=rbxassetid://18980527073         tex=
+  .BasketballShrine.ShrineBox.Shrine.Floor mesh=rbxassetid://18980527104         tex=
+  ketballShrine.ShrineBox.Shrine.Roof Nail mesh=rbxassetid://18980527330         tex=
+  allShrine.ShrineBox.Shrine.Shrine Roof 1 mesh=rbxassetid://18980527530         tex=
+  llShrine.ShrineBox.Shrine.Shrine Roofing mesh=rbxassetid://18980528117         tex=
+  BasketballShrine.ShrineBox.Shrine.Chains mesh=rbxassetid://18980528496         tex=
+  lShrine.ShrineBox.Shrine.Fire Bowl Thing mesh=rbxassetid://18980528528         tex=
+  allShrine.ShrineBox.Shrine.Shrine Roof 2 mesh=rbxassetid://18980528649         tex=
+  ketballShrine.ShrineBox.Shrine.Ball.Mesh mesh=rbxassetid://14536927547         tex=rbxassetid://14554890555
+  sets.Effects.Skeletal.Hand.Hand.LeftHand mesh=https://assetdelivery.roblox.com/v1/asset/?id=6941200004 tex=
+  .Effects.Skeletal.Hand.Hand.LeftLowerArm mesh=https://assetdelivery.roblox.com/v1/asset/?id=6941200020 tex=
+  ets.Effects.Prismatic.EffectBox.StarkVfx mesh=rbxassetid://9473078163          tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  s.Graveyard.Graves.Graves.FL Grave.Grave mesh=rbxassetid://111026008914584     tex=
+  veyard.Graves.Graves.FL Grave.Gravestone mesh=rbxassetid://81300468622667      tex=
+  Assets.Effects.ReaperSlash.Scythe.Scythe mesh=https://assetdelivery.roblox.com/v1/asset/?id=16561100722 tex=
+  ects.ChristmasMiracle.ChristmasTree.Tree mesh=rbxassetid://105270491849140     tex=
+  ristmasMiracle.ChristmasTree.Tree Leaves mesh=rbxassetid://135218758489727     tex=rbxassetid://101192904816275
+  ects.ChristmasMiracle.ChristmasTree.Star mesh=rbxassetid://71962270057463      tex=
+  cts.ChristmasMiracle.ChristmasTree.Led 2 mesh=rbxassetid://117286119474396     tex=
+  ristmasMiracle.ChristmasTree.Light Balls mesh=rbxassetid://92325403955042      tex=
+  asMiracle.ChristmasTree.Light Balls Base mesh=rbxassetid://110599629229750     tex=
+  cts.ChristmasMiracle.ChristmasTree.Led 1 mesh=rbxassetid://89792137758753      tex=
+  e.Assets.Effects.SleighWorld.Sleigh.Body mesh=rbxassetid://110462468460527     tex=
+  .Assets.Effects.SleighWorld.Sleigh.Extra mesh=rbxassetid://127138486822950     tex=
+  Effects.SleighWorld.Presents.BasePresent mesh=rbxassetid://11755349734         tex=rbxassetid://2636749953
+  Effects.SleighWorld.Presents.BasePresent mesh=rbxassetid://11755349734         tex=rbxassetid://2636473988
+  Effects.SleighWorld.Presents.BasePresent mesh=rbxassetid://11754334280         tex=rbxassetid://2642493670
+  ssets.Effects.BreezoCustom.EffectBox.Orb mesh=rbxassetid://1886703108          tex=
+  sets.Effects.JTFMPhantasm.EffectBox.Part mesh=rbxassetid://95930750420617      tex=
+  antasm.Explosion.Explosion.Beam gradient mesh=rbxassetid://76275823102326      tex=
+  Phantasm.Explosion.Explosion.Beam body 2 mesh=rbxassetid://95930750420617      tex=
+  hantasm.Explosion.Explosion.Beam insides mesh=rbxassetid://75430181786124      tex=
+  ge.Assets.Effects.InfiniteVoid.Void.Void mesh=rbxassetid://5358425517          tex=
+  niteVoid.Void.BlackHole.a1.whispy5.trail decal=rbxassetid://14595736478
+  ssets.Effects.Lovestruck.EffectBox.beam2 mesh=rbxassetid://6044670354          tex=
+  rage.Assets.Effects.Lovestruck.Beam.Beam mesh=rbxassetid://6044670354          tex=
+  age.Assets.Effects.Lovestruck.Beam.Beam2 mesh=rbxassetid://6044670354          tex=
+  fects.MegaStrike.Meteor.WindBeamOld.Mesh mesh=rbxassetid://14543611213         tex=
+  ects.MegaStrike.Meteor.WindBeamOld.Decal decal=rbxassetid://14543379496
+  ects.StarRam.EffectBox.Beam.Beam insides mesh=rbxassetid://75430181786124      tex=
+  s.Effects.StarRam.EffectBox.Beam.Outline mesh=rbxassetid://76275823102326      tex=
+  .Effects.StarRam.EffectBox.Beam.Outline2 mesh=rbxassetid://76275823102326      tex=
+  .Effects.StarRam.EffectBox.Beam.Outline5 mesh=rbxassetid://76275823102326      tex=
+  s.Effects.Aizen.EffectBox.Swords.1.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.1.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.10.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.10.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.11.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.11.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.12.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.12.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.13.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.13.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.14.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.14.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.15.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.15.sds mesh=rbxassetid://115805442073652     tex=
+  .Effects.Aizen.EffectBox.Swords.16.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ts.Effects.Aizen.EffectBox.Swords.16.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.2.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.2.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.3.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.3.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.4.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.4.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.5.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.5.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.6.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.6.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.7.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.7.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.8.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.8.sds mesh=rbxassetid://115805442073652     tex=
+  s.Effects.Aizen.EffectBox.Swords.9.bbvbb mesh=rbxassetid://115805442073652     tex=
+  ets.Effects.Aizen.EffectBox.Swords.9.sds mesh=rbxassetid://115805442073652     tex=
+  Aizen.EffectBox.OuterSwords2.SenbonSword mesh=rbxassetid://14283746216         tex=
+  Aizen.EffectBox.OuterSwords2.SenbonSword mesh=rbxassetid://14283746216         tex=
+  Aizen.EffectBox.OuterSwords2.SenbonSword mesh=rbxassetid://14283746216         tex=
+  ... (truncated)
+
+=== KNIT VisualService ===
+BanService
+    RE  <Folder>
+    Panel  <RemoteEvent>
+    RF  <Folder>
+    OverseerAction  <RemoteFunction>
+MonetizationService
+SeasonService
+    RE  <Folder>
+    Claim  <RemoteEvent>
+StockBundleService
+    RF  <Folder>
+    GetAllStock  <RemoteFunction>
+    GetStock  <RemoteFunction>
+    RE  <Folder>
+    StockUpdated  <RemoteEvent>
+LevelService
+    RF  <Folder>
+    Reset  <RemoteFunction>
+    Prestige  <RemoteFunction>
+ControlService
+    RE  <Folder>
+    PumpFake  <RemoteEvent>
+    ShootMeterRelease  <RemoteEvent>
+    Shoot  <RemoteEvent>
+    Screen  <RemoteEvent>
+    DisconnectM6D  <RemoteEvent>
+    StartDribble  <RemoteEvent>
+    Emote  <RemoteEvent>
+    Dunk  <RemoteEvent>
+    ShootMeterStart  <RemoteEvent>
+    Pass  <RemoteEvent>
+    StopEmote  <RemoteEvent>
+    CreateM6D  <RemoteEvent>
+    Steal  <RemoteEvent>
+    StartShoot  <RemoteEvent>
+    Guard  <RemoteEvent>
+    Block  <RemoteEvent>
+    LeaveQueue  <RemoteEvent>
+    ShootMeterCancel  <RemoteEvent>
+    Posting  <RemoteEvent>
+    SelfDie  <RemoteEvent>
+    PostBlocked  <RemoteEvent>
+    StartDunk  <RemoteEvent>
+VisualService
+    RE  <Folder>
+    Effects  <RemoteEvent>
+EventService
+    RF  <Folder>
+    GetStats  <RemoteFunction>
+    RE  <Folder>
+    Claim  <RemoteEvent>
+    Contribute  <RemoteEvent>
+KeybindService
+    RE  <Folder>
+    ResetAllKeybinds  <RemoteEvent>
+    SetKeybind  <RemoteEvent>
+    SetMobileLayout  <RemoteEvent>
+    ResetKeybind  <RemoteEvent>
+WebService
+AchievementService
+DataService
+LiveEventService
+ClanService
+    RE  <Folder>
+    ClanDataUpdated  <RemoteEvent>
+    OutboundRequestsUpdated  <RemoteEvent>
+    ClanQuestsUpdated  <RemoteEvent>
+    InviteDataUpdated  <RemoteEvent>
+    ClanRequestInboxUpdated  <RemoteEvent>
+    ClanStatsChanged  <RemoteEvent>
+    ClanInvitesSentUpdated  <RemoteEvent>
+    RF  <Folder>
+    GetClanData  <RemoteFunction>
+    GetMyContribution  <RemoteFunction>
+    AcceptJoinRequest  <RemoteFunction>
+    GetClanStats  <RemoteFunction>
+    KickMember  <RemoteFunction>
+    GetClansInServer  <RemoteFunction>
+    GetMatchHistory  <RemoteFunction>
+    RenameClan  <RemoteFunction>
+    ClaimSubdivisionReward  <RemoteFunction>
+    CreateClan  <RemoteFunction>
+    AcceptInvite  <RemoteFunction>
+    LookupClan  <RemoteFunction>
+    CancelJoinRequest  <RemoteFunction>
+    RevokeInvite  <RemoteFunction>
+    UpdateDescription  <RemoteFunction>
+    UpdateClanIcon  <RemoteFunction>
+    DemoteMember  <RemoteFunction>
+    DeclineAllJoinRequests  <RemoteFunction>
+    GetLeaderboard  <RemoteFunction>
+    PromoteMember  <RemoteFunction>
+    TransferOwnership  <RemoteFunction>
+    SendInvite  <RemoteFunction>
+    GetInboundInvites  <RemoteFunction>
+    GetPendingRequests  <RemoteFunction>
+    LeaveClan  <RemoteFunction>
+    DeclineJoinRequest  <RemoteFunction>
+    SendJoinRequest  <RemoteFunction>
+    GetMySeasonContribution  <RemoteFunction>
+    GetClanMembers  <RemoteFunction>
+    DeclineInvite  <RemoteFunction>
+    DisbandClan  <RemoteFunction>
+GiftBoxService
+    RF  <Folder>
+    AttemptFinishOpenGift  <RemoteFunction>
+    AttemptStartOpenGift  <RemoteFunction>
+BlankService
+PlayerService
+    RF  <Folder>
+    Ping  <RemoteFunction>
+    SetGift  <RemoteFunction>
+    JoinUser  <RemoteFunction>
+    RejoinGame  <RemoteFunction>
+    RE  <Folder>
+    Options  <RemoteEvent>
+    WatchAd  <RemoteEvent>
+    CreateServer  <RemoteEvent>
+    NoForget  <RemoteEvent>
+    Settings  <RemoteEvent>
+    HideStreak  <RemoteEvent>
+    ServerTransfer  <RemoteEvent>
+    Teleport  <RemoteEvent>
+    HideTag  <RemoteEvent>
+    AFKToggle  <RemoteEvent>
+    MeterOptions  <RemoteEvent>
+GameService
+NewStatService
+    RF  <Folder>
+    GetStats  <RemoteFunction>
+AudioService
+LatencyService
+ForeverPackService
+    RF  <Folder>
+    AttemptClaim  <RemoteFunction>
+SalesService
+    RF  <Folder>
+    GetCategoryRAP  <RemoteFunction>
+    GetFullCache  <RemoteFunction>
+    IsCacheReady  <RemoteFunction>
+    GetRAP  <RemoteFunction>
+    RE  <Folder>
+    RAPCacheUpdated  <RemoteEvent>
+QuestService
+    RE  <Folder>
+    Claim  <RemoteEvent>
+CommandService
+BrowserService
+TradingService
+    RF  <Folder>
+    AttemptTradeAction  <RemoteFunction>
+    AttemptSendTradeRequest  <RemoteFunction>
+    AttemptAcceptTradeRequest  <RemoteFunction>
+    AttemptCancelTradeRequest  <RemoteFunction>
+EconomyService
+    RE  <Folder>
+    BuyCase  <RemoteEvent>
+    Equip  <RemoteEvent>
+    Jersey  <RemoteEvent>
+    Delete  <RemoteEvent>
+    Unbox  <RemoteEvent>
+    Handle  <RemoteEvent>
+CodeService
+    RF  <Folder>
+    PaidSpinner  <RemoteFunction>
+    ParkSpinner  <RemoteFunction>
+    Redeem  <RemoteFunction>
+    ClaimParkSpinnerReward  <RemoteFunction>
+    Daily  <RemoteFunction>
+ServerRewind
+
+=== YOUR EQUIPPED STATE ===
+Player                   attr  OVR                          = 20
+Player                   attr  SpawnTick                    = 70373
+Player                   attr  SE                           = true
+Player                   attr  Loaded                       = true
+Player                   attr  Prestige                     = 0
+Player                   attr  _INIT                        = true
+Player                   attr  Court                        = 3
+Player                   attr  Team                         = Away
+Player                   attr  Practice_Shot_Attempt        = true
+Player                   attr  ST                           = true
+Player                   attr  InClan                       = false
+
+=== REMOTES THAT LOOK COSMETIC ===
+RemoteEvent      ReplicatedStorage.Packages.Knit.Services.VisualService.RE.Effects
+
+=== LIVE BALL CONTENTS  (equip an effect, then watch this) ===
+ball: Workspace.Game.Courts.PracticeCourt.Rack.Basketball  <Part>
+  Color=1, 1, 1  Material=Enum.Material.Fabric  Transparency=0.00
+  Mesh                           <SpecialMesh>  MeshId=rbxassetid://9189139113  TextureId=http://www.roblox.com/asset/?id=13818804314

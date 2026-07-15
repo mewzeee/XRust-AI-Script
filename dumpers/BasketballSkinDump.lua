@@ -100,6 +100,65 @@ if assets then
 	end
 end
 
+-- ── 1b2. ONE skin, in full ────────────────────────────────────────────
+-- The list above is truncated to 40-char tails, which isn't enough to know how
+-- a skin is actually assembled. Dump a couple whole, with the properties that
+-- decide whether a clone renders: Transparency, Size, Anchored, mesh/texture.
+hdr("FULL SKIN STRUCTURE")
+local ballFolder = assets and assets:FindFirstChild("Ball")
+if not ballFolder then
+	w("no Assets.Ball")
+else
+	local want = { "Conqueror", ballFolder:GetChildren()[1] and ballFolder:GetChildren()[1].Name }
+	for _, nm in ipairs(want) do
+		local skin = nm and ballFolder:FindFirstChild(nm)
+		if skin then
+			w("")
+			w("### " .. skin:GetFullName() .. "  <" .. skin.ClassName .. ">")
+			local base = #skin:GetFullName()
+			for _, d in ipairs(skin:GetDescendants()) do
+				local rel = d:GetFullName():sub(base + 2)
+				local extra = ""
+				if d:IsA("BasePart") then
+					extra = (" size=%s trans=%.2f anch=%s"):format(
+						tostring(d.Size), d.Transparency, tostring(d.Anchored))
+				elseif d:IsA("SpecialMesh") then
+					extra = (" mesh=%s tex=%s scale=%s"):format(
+						tostring(d.MeshId), tostring(d.TextureId), tostring(d.Scale))
+				elseif d:IsA("Decal") or d:IsA("Texture") then
+					extra = " texture=" .. tostring(d.Texture)
+				elseif d:IsA("ValueBase") then
+					extra = " = " .. tostring(d.Value)
+				end
+				w(("  %-46s <%-16s>%s"):format(rel, d.ClassName, extra))
+			end
+			-- attributes often carry the id/behaviour the game keys off
+			local ok, at = pcall(function() return skin:GetAttributes() end)
+			if ok and at then
+				for k, v in pairs(at) do w("  ATTR " .. k .. " = " .. tostring(v)) end
+			end
+		end
+	end
+end
+
+-- ── 1b3. courts, since Player.Court is an index ───────────────────────
+hdr("COURTS")
+w("Player attr Court = " .. tostring(LocalPlayer:GetAttribute("Court")))
+w("Player attr Team  = " .. tostring(LocalPlayer:GetAttribute("Team")))
+local g = workspace:FindFirstChild("Game")
+local courts = g and g:FindFirstChild("Courts")
+if not courts then
+	w("no Workspace.Game.Courts")
+else
+	for i, c in ipairs(courts:GetChildren()) do
+		local ok, piv = pcall(function() return c:GetPivot().Position end)
+		w(("%d. %-24s <%-10s> pivot=%s"):format(i, c.Name, c.ClassName, ok and tostring(piv) or "?"))
+		for _, k in ipairs(c:GetChildren()) do
+			w("      - " .. k.Name .. "  <" .. k.ClassName .. ">")
+		end
+	end
+end
+
 -- ── 1c. the Knit VisualService, since that's what owns effects ────────
 hdr("KNIT VisualService")
 local knit = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("Knit")
