@@ -1,0 +1,116 @@
+Basketball Legends dump — 2026-07-15 20:19:55 UTC
+place: 14386691987
+
+=== TEMPLATE FOLDERS (ReplicatedStorage) ===
+ReplicatedStorage.Assets.FanCosmetic                                    Folder          5 children
+      - Hair  <Folder>
+      - Hat  <Folder>
+      - Misc  <Folder>
+      - Long Hair 2  <Part>
+      - Long Hair 1  <Part>
+ReplicatedStorage.Assets.EmoteItems                                     Folder          131 children
+      - Invincible  <Folder>
+      - GamblerDance  <Folder>
+      - TakeFlight  <Folder>
+      - L  <Folder>
+      - Megaphone  <Folder>
+      - YouTrashBro  <Folder>
+      - Griddy  <Folder>
+      - Sturdy  <Folder>
+      - ScythePull  <Folder>
+      - GoldPot  <Folder>
+      - Rage  <Folder>
+      - Heart  <Folder>
+      - WinterStaff  <Folder>
+      - Charging  <Folder>
+      - RocketRodeo  <Folder>
+      - ToyCar  <Folder>
+      - Throne  <Folder>
+      - Rain  <Folder>
+      - Drew  <Folder>
+      - BillyBounce  <Folder>
+      - Meditate  <Folder>
+      - Mime  <Folder>
+      - KungFu  <Folder>
+      - Backflip  <Folder>
+      - MoneySpread  <Folder>
+      ... +106 more
+ReplicatedStorage.Assets.EmoteItems.HeadlessBaller                      Folder          1 children
+      - SFX  <Sound>
+ReplicatedStorage.Assets.EmoteItems.Snowball                            Folder          2 children
+      - SFX  <Sound>
+      - Prop  <Model>
+ReplicatedStorage.Assets.EmoteItems.SpinTheBall                         Folder          4 children
+      - Start  <Sound>
+      - SpinLoop  <Sound>
+      - SFX  <Sound>
+      - Prop  <Model>
+ReplicatedStorage.Assets.EmoteItems.AuraFarm                            Folder          4 children
+      - Startup  <Sound>
+      - Loop  <Sound>
+      - SFX  <Sound>
+      - Prop  <Model>
+ReplicatedStorage.Assets.EmoteItems.Goofball                            Folder          4 children
+      - Loop  <Sound>
+      - SFX  <Sound>
+      - Start  <Sound>
+      - Prop  <Model>
+ReplicatedStorage.Assets.CaseModels.CyberSkinCase                       Model           6 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+      - Bottom Handle  <MeshPart>
+      - Top Handle  <MeshPart>
+ReplicatedStorage.Assets.CaseModels.CyberSkinCoinCase                   Model           6 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+      - Bottom Handle  <MeshPart>
+      - Top Handle  <MeshPart>
+ReplicatedStorage.Assets.CaseModels.SpaceSkinCoinCase                   Model           6 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+      - Top handle  <Part>
+      - Bottom Handle  <Part>
+ReplicatedStorage.Assets.CaseModels.SpaceSkinCase                       Model           6 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+      - Top handle  <Part>
+      - Bottom Handle  <Part>
+ReplicatedStorage.Assets.CaseModels.SkinCase1                           Model           4 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+ReplicatedStorage.Assets.CaseModels.SkinCase2                           Model           4 children
+      - Animator  <AnimationController>
+      - Base  <MeshPart>
+      - Lid  <MeshPart>
+      - HumanoidRootPart  <Part>
+(stopping after 12 folders)
+
+=== YOUR EQUIPPED STATE ===
+Player                   attr  OVR                          = 20
+Player                   attr  SpawnTick                    = 102848
+Player                   attr  SE                           = true
+Player                   attr  Loaded                       = true
+Player                   attr  Prestige                     = 0
+Player                   attr  _INIT                        = true
+Player                   attr  Practice_Shot_Attempt        = true
+Player                   attr  ST                           = true
+Player                   attr  InClan                       = false
+
+=== REMOTES THAT LOOK COSMETIC ===
+RemoteEvent      ReplicatedStorage.Packages.Knit.Services.VisualService.RE.Effects
+
+=== LIVE BALL CONTENTS  (equip an effect, then watch this) ===
+ball: Workspace.Game.Courts.PracticeCourt.Rack.Basketball  <Part>
+  Color=1, 1, 1  Material=Enum.Material.Fabric  Transparency=0.00
+  Mesh                           <SpecialMesh>  MeshId=rbxassetid://9189139113  TextureId=http://www.roblox.com/asset/?id=13818804314
+  Highlight                      <Highlight>

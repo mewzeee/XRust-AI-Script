@@ -736,6 +736,39 @@ function Library:AddCategory(name, order)
 				return { Set = function(_, t) l.Text = t end, Instance = l }
 			end
 			----------------------------------------------------------
+			-- TEXTBOX  (label on the left, editable field on the right)
+			----------------------------------------------------------
+			function comp:AddTextbox(opts)
+				local row = create("Frame", { Parent = scroll, BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, 20), LayoutOrder = ord() })
+				create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(0.42, 0, 1, 0),
+					Font = Library.Font, Text = opts.Text or "Text", TextSize = 12,
+					TextColor3 = Library.Theme.TextOn, TextXAlignment = Enum.TextXAlignment.Left })
+				local box = create("TextBox", { Parent = row, Size = UDim2.new(0.58, 0, 1, 0),
+					Position = UDim2.new(0.42, 0, 0, 0), BackgroundColor3 = Library.Theme.Panel2,
+					BorderSizePixel = 0, Font = Library.Font, TextSize = 11.5,
+					TextColor3 = Library.Theme.TextOn, ClearTextOnFocus = false,
+					PlaceholderText = opts.Placeholder or "", PlaceholderColor3 = Library.Theme.TextOff,
+					Text = opts.Default or "", TextTruncate = Enum.TextTruncate.AtEnd })
+				border(box, Library.Theme.Border, 1); corner(box, 4)
+
+				local api = {}
+				function api:Set(v)
+					box.Text = tostring(v or "")
+					if opts.Flag then Library.Flags[opts.Flag] = box.Text end
+					if opts.Callback then pcall(opts.Callback, box.Text) end
+				end
+				function api:Get() return box.Text end
+				-- commit on focus loss so a callback doesn't fire per keystroke
+				box.FocusLost:Connect(function() api:Set(box.Text) end)
+				if opts.Flag then
+					Library.Flags[opts.Flag] = box.Text
+					Library.Options[opts.Flag] = api
+				end
+				api.Instance = box
+				return api
+			end
+			----------------------------------------------------------
 			-- COLOR PICKER (HSV square + hue bar + hex)
 			----------------------------------------------------------
 			function comp:AddColorPicker(opts)
@@ -1050,8 +1083,38 @@ end
 local lastBall = nil
 local nextDeepScan = 0
 
+-- Real layout, straight from the dump:
+--   Workspace.Game.Courts.<CourtName>.Rack.Basketball
+-- So courts are actual models we can look up rather than infer, and a ball
+-- sitting in a court's Rack is a spare on the rack, not a live loose ball.
+local function courtsFolder()
+	local g = Workspace:FindFirstChild("Game")
+	return g and g:FindFirstChild("Courts")
+end
+
+-- the court whose origin is nearest us = the one we're playing on
+local function currentCourt(from)
+	local courts = courtsFolder()
+	if not courts then return nil end
+	local best, bestD = nil, math.huge
+	for _, c in ipairs(courts:GetChildren()) do
+		local ok, pivot = pcall(function() return c:GetPivot().Position end)
+		if ok then
+			local d = (pivot - from).Magnitude
+			if d < bestD then best, bestD = c, d end
+		end
+	end
+	return best, bestD
+end
+
 local function isBall(d)
 	return d:IsA("BasePart") and (d.Name == "Basketball" or d.Name == "Ball")
+end
+
+-- a ball parented under a court's Rack is racked, not in play
+local function isRacked(b)
+	local p = b and b.Parent
+	return p ~= nil and p.Name == "Rack"
 end
 
 local function findBall()
@@ -1065,9 +1128,20 @@ local function findBall()
 	-- cached ball still in the world? nothing to search for.
 	if lastBall and lastBall.Parent then return lastBall end
 
-	-- cheap pass: loose balls almost always sit directly under workspace
+	-- cheap pass: a live loose ball is a direct child of workspace
 	for _, d in ipairs(Workspace:GetChildren()) do
 		if isBall(d) then lastBall = d; return d end
+	end
+	-- next cheapest: our own court's rack (Workspace.Game.Courts.<name>.Rack)
+	local myc = getChar()
+	if myc then
+		local court = currentCourt(myc.HumanoidRootPart.Position)
+		local rack = court and court:FindFirstChild("Rack")
+		if rack then
+			for _, d in ipairs(rack:GetChildren()) do
+				if isBall(d) then lastBall = d; return d end
+			end
+		end
 	end
 
 	-- expensive pass, throttled. A ball doesn't appear and vanish faster than this.
@@ -1197,6 +1271,21 @@ greenP:AddDropdown({ Text = "Shoot Key", Flag = "green_key", Options = { "E", "Q
 	Default = "E", Callback = function(v)
 		F.Green.key = (v == "MouseButton1") and Enum.UserInputType.MouseButton1 or Enum.KeyCode[v]
 	end })
+
+-- Rage panel. (These were dropped when Auto Green was rewritten, which left the
+-- panel empty and F.Green.rage permanently false — rage could never fire.)
+greenP2:AddToggle({ Text = "Rage Green", Flag = "green_rage", Callback = function(on)
+	F.Green.rage = on
+	if on then Library:Notify("Rage Green", "Moves you on release so nobody can contest.", 4, "good") end
+end })
+greenP2:AddDropdown({ Text = "Rage Mode", Flag = "green_ragemode", Options = { "Drop", "3PT Teleport" }, Default = "Drop",
+	Callback = function(v) F.Green.rageMode = v end })
+greenP2:AddSlider({ Text = "Rage Depth", Flag = "green_depth", Min = 1, Max = 8, Decimals = 1, Default = 3,
+	Suffix = "m", Callback = function(v) F.Green.rageDepth = v end })
+greenP2:AddSlider({ Text = "Rage Hold", Flag = "green_hold", Min = 0.2, Max = 2, Decimals = 2, Default = 0.6,
+	Suffix = "s", Callback = function(v) F.Green.rageHold = v end })
+greenP2:AddSlider({ Text = "3PT Radius", Flag = "green_radius", Min = 12, Max = 60, Default = 30,
+	Suffix = "m", Callback = function(v) F.Green.rageRadius = v end })
 
 local function greenKeyDown()
 	local k = F.Green.key
@@ -1709,6 +1798,99 @@ Library:StartLoop("ballvis", RunService.RenderStepped, function()
 	end
 end)
 
+--== Skin Changer ==--
+local skinPage = ShootCat:AddTab("Skin Changer")
+local skP  = skinPage:AddPanel("Ball Skin")
+local skP2 = skinPage:AddPanel("Custom")
+
+-- CLIENT-SIDE ONLY — and be clear about what that means: the ball's look is a
+-- SpecialMesh under the Basketball part, and its skin is just Mesh.TextureId
+-- (the dump showed the default as asset 13818804314). Writing that locally
+-- retextures the ball for YOU. Everyone else still sees whatever the server
+-- says you own, because VisualService decides that server-side. This is a
+-- local visual, not a way to get skins you don't have.
+F.Skin = { enabled = false, texture = "", mesh = "", color = Color3.fromRGB(255, 255, 255),
+	useColor = false, material = "Fabric", defaultTex = nil, defaultMesh = nil, applied = nil }
+
+local function ballMesh()
+	local b = findBall()
+	if not b then return nil end
+	return b:FindFirstChildWhichIsA("SpecialMesh"), b
+end
+
+local function rememberDefaults()
+	if F.Skin.defaultTex then return end
+	local m = ballMesh()
+	if m then
+		F.Skin.defaultTex = m.TextureId
+		F.Skin.defaultMesh = m.MeshId
+	end
+end
+
+local function restoreSkin()
+	local m, b = ballMesh()
+	if m and F.Skin.defaultTex then
+		pcall(function()
+			m.TextureId = F.Skin.defaultTex
+			m.MeshId = F.Skin.defaultMesh
+		end)
+	end
+	if b then pcall(function() b.Color = Color3.fromRGB(255, 255, 255) end) end
+end
+
+-- id -> the URL form the game itself uses, so it loads identically
+local function texUrl(id)
+	id = tostring(id):gsub("%D", "")
+	if id == "" then return nil end
+	return "http://www.roblox.com/asset/?id=" .. id
+end
+
+skP:AddToggle({ Text = "Enabled", Flag = "skin_enabled", Callback = function(on)
+	F.Skin.enabled = on
+	rememberDefaults()
+	if not on then restoreSkin() end
+end })
+skP:AddToggle({ Text = "Tint Ball", Flag = "skin_usecolor", Callback = function(on) F.Skin.useColor = on end })
+skP:AddColorPicker({ Text = "Tint", Flag = "skin_color", Default = Color3.fromRGB(255, 255, 255),
+	Callback = function(c) F.Skin.color = c end })
+skP:AddDropdown({ Text = "Material", Flag = "skin_mat",
+	Options = { "Fabric", "Neon", "Plastic", "SmoothPlastic", "Metal", "Marble", "Glass", "ForceField" },
+	Default = "Fabric", Callback = function(v) F.Skin.material = v end })
+skP:AddButton({ Text = "Reset To Default", Callback = function()
+	restoreSkin()
+	Library:Notify("Skin", "Ball restored.", 2, "good")
+end })
+
+skP2:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "13818804314",
+	Callback = function(v) F.Skin.texture = v end })
+skP2:AddTextbox({ Text = "Mesh ID", Flag = "skin_mesh", Placeholder = "9189139113",
+	Callback = function(v) F.Skin.mesh = v end })
+skP2:AddButton({ Text = "Copy Current IDs", Callback = function()
+	local m = ballMesh()
+	if not m then Library:Notify("Skin", "No ball found.", 3); return end
+	local s = "MeshId = " .. tostring(m.MeshId) .. "\nTextureId = " .. tostring(m.TextureId)
+	if typeof(setclipboard) == "function" then pcall(setclipboard, s) end
+	Library:Notify("Skin", "Copied the ball's current IDs.", 3, "good")
+end })
+
+Library:StartLoop("skin", RunService.Heartbeat, function()
+	if not F.Skin.enabled or Library.Destroyed then return end
+	local m, b = ballMesh()
+	if not (m and b) then return end
+	rememberDefaults()
+
+	local tex = texUrl(F.Skin.texture)
+	if tex and m.TextureId ~= tex then pcall(function() m.TextureId = tex end) end
+	local msh = texUrl(F.Skin.mesh)
+	if msh and m.MeshId ~= msh then pcall(function() m.MeshId = msh end) end
+
+	if F.Skin.useColor and b.Color ~= F.Skin.color then
+		pcall(function() b.Color = F.Skin.color end)
+	end
+	local mat = Enum.Material[F.Skin.material]
+	if mat and b.Material ~= mat then pcall(function() b.Material = mat end) end
+end)
+
 --=====================================================================
 --  GUARDING CATEGORY
 --=====================================================================
@@ -1752,7 +1934,9 @@ guardP:AddToggle({ Text = "Enabled", Flag = "guard_enabled", Bind = true, BindNo
 		F.Guard.target = nil
 		if F.Guard.hl then F.Guard.hl.Enabled = false end
 		local h = getHumanoid()
-		if h then h:Move(Vector3.zero, false) end
+		-- hand control back: stop walking and re-enable the Humanoid's own
+		-- rotation, or the character stays frozen facing the last target
+		if h then h:Move(Vector3.zero, false); h.AutoRotate = true end
 	end
 end })
 guardP:AddToggle({ Text = "Ball Carrier Only", Flag = "guard_ballonly", Callback = function(on) F.Guard.ballOnly = on end })
@@ -1814,20 +1998,37 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 	local hrp = myc.HumanoidRootPart
 
 	if F.Guard.mode == "Legs" then
-		-- Humanoid:Move walks the character there under its own power - real
-		-- pathing, real speed, and it can be beaten. Face separately so we keep
-		-- looking at them while backpedalling.
+		-- Real movement: no CFrame writes at all, just Humanoid:Move, so the
+		-- character walks under its own power and can be beaten off the dribble.
+		--
+		-- Two things that made the first version bad:
+		--  * it fought the game's own movement by also writing hrp.CFrame every
+		--    frame to face the target — that cancels your input and locks you in
+		--    place. Facing is now done via Humanoid.AutoRotate + the walk vector.
+		--  * a hard 1.5 stud stop meant it stuttered on the spot at the boundary.
+		--    A deadband plus overshoot damping keeps it smooth.
 		local hum = myc:FindFirstChildOfClass("Humanoid")
 		if hum then
 			local flat = Vector3.new(goalPos.X - hrp.Position.X, 0, goalPos.Z - hrp.Position.Z)
-			if flat.Magnitude > 1.5 then
-				hum:Move(flat.Unit, false)
+			local d = flat.Magnitude
+			if d > 0.8 then
+				-- ease off as we arrive so we settle instead of oscillating
+				local scale = math.clamp(d / 4, 0.25, 1)
+				hum:Move(flat.Unit * scale, false)
 			else
 				hum:Move(Vector3.zero, false)
 			end
+			-- face them without touching CFrame: let the Humanoid rotate itself
 			if F.Guard.faceTarget then
+				hum.AutoRotate = false
 				local look = Vector3.new(tHrp.Position.X, hrp.Position.Y, tHrp.Position.Z)
-				hrp.CFrame = CFrame.new(hrp.Position, look)
+				if (look - hrp.Position).Magnitude > 0.1 then
+					local want = CFrame.new(hrp.Position, look)
+					-- rotate only; position stays wherever the legs put us
+					hrp.CFrame = CFrame.new(hrp.Position) * (want - want.Position)
+				end
+			else
+				hum.AutoRotate = true
 			end
 		end
 	else
@@ -1884,6 +2085,10 @@ Library:StartLoop("rebound", RunService.RenderStepped, function()
 	local ball = findBall()
 	local myc = getChar()
 	if not (ball and myc) then return end
+	-- Ignore balls sitting on a court's Rack (Courts.<name>.Rack.Basketball).
+	-- Those are spares that never move, and chasing one is why rebound looked
+	-- broken: it locked onto a rack ball instead of the live one.
+	if isRacked(ball) then return end
 	local hrp = myc.HumanoidRootPart
 	if (ball.Position - hrp.Position).Magnitude > F.Reb.range then return end
 
@@ -1995,11 +2200,19 @@ Library:StartLoop("esp", RunService.RenderStepped, function()
 
 				-- box + tracer (Drawing, screen-space)
 				if o.box then
-					if F.ESP.box and on then
-						local h = math.clamp(1800 / sp.Z, 12, 900)
-						local w = h * 0.55
+					-- Project the character's actual head-to-foot extent instead of
+					-- guessing from depth. The old `1800 / sp.Z` was a made-up
+					-- constant and drew a postage stamp at any real distance.
+					local head = char:FindFirstChild("Head")
+					local top = (head and head.Position.Y or hrp.Position.Y + 2.5) + 0.6
+					local bottom = hrp.Position.Y - 3.2
+					local tp = Camera:WorldToViewportPoint(Vector3.new(hrp.Position.X, top, hrp.Position.Z))
+					local bp = Camera:WorldToViewportPoint(Vector3.new(hrp.Position.X, bottom, hrp.Position.Z))
+					local h = math.abs(bp.Y - tp.Y)
+					if F.ESP.box and on and h > 1 then
+						local w = h * 0.62
 						o.box.Size = Vector2.new(w, h)
-						o.box.Position = Vector2.new(sp.X - w / 2, sp.Y - h / 2)
+						o.box.Position = Vector2.new(sp.X - w / 2, math.min(tp.Y, bp.Y))
 						o.box.Color = col
 						o.box.Visible = true
 					else

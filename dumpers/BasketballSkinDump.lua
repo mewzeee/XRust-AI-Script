@@ -43,8 +43,6 @@ end
 w("Basketball Legends dump — " .. os.date("!%Y-%m-%d %H:%M:%S") .. " UTC")
 w("place: " .. tostring(game.PlaceId))
 
--- ── 1. anything that smells like an effect/skin library ────────────────
-hdr("TEMPLATE FOLDERS (ReplicatedStorage)")
 local WORDS = { "effect", "skin", "cosmetic", "item", "trail", "particle", "vfx", "aura", "ball" }
 local function looksRelevant(n)
 	n = n:lower()
@@ -52,21 +50,70 @@ local function looksRelevant(n)
 	return false
 end
 
-local seen = 0
-for _, d in ipairs(RS:GetDescendants()) do
-	if looksRelevant(d.Name) and (d:IsA("Folder") or d:IsA("Model") or d:IsA("Configuration")) then
-		local kids = d:GetChildren()
-		w(("%-70s  %-14s  %d children"):format(path(d), d.ClassName, #kids))
-		-- list the children: these are usually the actual effect names
-		for i, k in ipairs(kids) do
-			if i > 25 then w("      ... +" .. (#kids - 25) .. " more"); break end
-			w("      - " .. k.Name .. "  <" .. k.ClassName .. ">")
-		end
-		seen = seen + 1
-		if seen > 12 then w("(stopping after 12 folders)"); break end
+-- ── 1a. the Assets tree, top level ────────────────────────────────────
+-- The first dump stopped after 12 matching folders and never reached the ones
+-- that matter, because CaseModels/EmoteItems ate the budget. List Assets' whole
+-- top level first: that's the index of what the game stores.
+hdr("ReplicatedStorage.Assets — TOP LEVEL")
+local assets = RS:FindFirstChild("Assets")
+if not assets then
+	w("no Assets folder")
+else
+	for _, d in ipairs(assets:GetChildren()) do
+		w(("%-34s <%-12s>  %d children"):format(d.Name, d.ClassName, #d:GetChildren()))
 	end
 end
-if seen == 0 then w("none found in ReplicatedStorage — try StarterPlayer / workspace") end
+
+-- ── 1b. every TextureId/MeshId under anything skin-ish ────────────────
+-- The ball's skin IS Mesh.TextureId (default 13818804314), so the skin list is
+-- really just a list of texture ids. Pull every one we can find.
+hdr("SKIN / EFFECT ASSET IDS")
+local function scanFor(root, label)
+	if not root then return end
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		local line
+		if d:IsA("SpecialMesh") or d:IsA("MeshPart") then
+			local tex = d:IsA("SpecialMesh") and d.TextureId or d.TextureID
+			if (tex and tex ~= "") or (d.MeshId and d.MeshId ~= "") then
+				line = ("%-40s mesh=%-32s tex=%s"):format(d:GetFullName():sub(-40), tostring(d.MeshId), tostring(tex))
+			end
+		elseif d:IsA("Decal") or d:IsA("Texture") then
+			line = ("%-40s decal=%s"):format(d:GetFullName():sub(-40), tostring(d.Texture))
+		end
+		if line then
+			w("  " .. line)
+			n = n + 1
+			if n > 120 then w("  ... (truncated)"); return end
+		end
+	end
+	if n == 0 then w("  (" .. label .. ": nothing with a texture)") end
+end
+
+if assets then
+	for _, d in ipairs(assets:GetChildren()) do
+		if looksRelevant(d.Name) and not d.Name:lower():find("emote", 1, true) then
+			w("")
+			w("-- " .. d:GetFullName() .. " --")
+			scanFor(d, d.Name)
+		end
+	end
+end
+
+-- ── 1c. the Knit VisualService, since that's what owns effects ────────
+hdr("KNIT VisualService")
+local knit = RS:FindFirstChild("Packages") and RS.Packages:FindFirstChild("Knit")
+local svc = knit and knit:FindFirstChild("Services")
+if svc then
+	for _, s in ipairs(svc:GetChildren()) do
+		w(s.Name)
+		for _, d in ipairs(s:GetDescendants()) do
+			w("    " .. d.Name .. "  <" .. d.ClassName .. ">")
+		end
+	end
+else
+	w("no Knit Services folder")
+end
 
 -- ── 2. what the game thinks you have equipped ─────────────────────────
 hdr("YOUR EQUIPPED STATE")
