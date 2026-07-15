@@ -2488,11 +2488,11 @@ end
 
 local function playEffectNative(name)
 	if name == "None" then return false end
-	if typeof(getconnections) ~= "function" then return false end
 	local re = effectsRemote()
-	if not re then return false end
-	local ok, conns = pcall(getconnections, re.OnClientEvent)
-	if not ok or #conns == 0 then return false end
+	if not re then
+		warn("[XRust] fx: VisualService.RE.Effects not found")
+		return false
+	end
 
 	local myc = getChar()
 	if not myc then return false end
@@ -2506,19 +2506,50 @@ local function playEffectNative(name)
 
 	-- a shot ball is a direct child of Workspace; fall back to the held one
 	local ball = Workspace:FindFirstChild("Basketball") or findBall()
-	if not (check and ball) then return false end
+	if not check then warn("[XRust] fx: no basket on court " .. tostring(court and court:GetFullName())) return false end
+	if not ball then warn("[XRust] fx: no ball") return false end
 
-	local fired = 0
-	for _, c in ipairs(conns) do
-		local fn = rawget(c, "Function")
-		if fn then
-			local sent = pcall(fn, "BallEffect", name, check, ball, true, 7)
-			if sent then fired = fired + 1 end
+	local args = { "BallEffect", name, check, ball, true, 7 }
+
+	-- Route 1: firesignal fires every listener on the signal, exactly as the
+	-- server arriving would. Cleanest when the executor has it.
+	if typeof(firesignal) == "function" then
+		local ok = pcall(firesignal, re.OnClientEvent, table.unpack(args))
+		if ok then
+			warn(("[XRust] fx '%s' via firesignal -> %s"):format(name, check:GetFullName()))
+			return true
 		end
 	end
-	warn(("[XRust] native effect '%s' -> %d handler(s), target=%s ball=%s")
-		:format(name, fired, check:GetFullName(), ball:GetFullName()))
-	return fired > 0
+
+	-- Route 2: call the connected handlers directly.
+	-- NOTE: a connection from getconnections is USERDATA — rawget() bypasses
+	-- __index and hands back nil, which is why the first version silently did
+	-- nothing. Index it normally.
+	if typeof(getconnections) == "function" then
+		local ok, conns = pcall(getconnections, re.OnClientEvent)
+		if ok and conns and #conns > 0 then
+			local fired = 0
+			for _, c in ipairs(conns) do
+				local sent = false
+				-- .Function on most executors
+				local gotFn, fn = pcall(function() return c.Function end)
+				if gotFn and type(fn) == "function" then
+					sent = pcall(fn, table.unpack(args))
+				end
+				-- some expose :Fire instead
+				if not sent then
+					sent = pcall(function() c:Fire(table.unpack(args)) end)
+				end
+				if sent then fired = fired + 1 end
+			end
+			warn(("[XRust] fx '%s' -> %d/%d handler(s), target=%s"):format(name, fired, #conns, check:GetFullName()))
+			return fired > 0
+		end
+		warn("[XRust] fx: getconnections returned no listeners")
+	else
+		warn("[XRust] fx: executor has no firesignal or getconnections")
+	end
+	return false
 end
 
 F.GFX.play = function(name)
@@ -2545,14 +2576,21 @@ do
 	if re then
 		Library:Connect(re.OnClientEvent, function(plr, value)
 			if Library.Destroyed or not F.GFX.enabled or F.GFX.name == "None" then return end
+			-- log every one of OUR releases, green or not: if this line never
+			-- appears the detector isn't the problem, and if it appears with a
+			-- low value the shot simply wasn't a green
+			if plr == LocalPlayer then
+				warn(("[XRust] release=%.4f (green needs >= %.3f)"):format(
+					type(value) == "number" and value or -1, GREEN_AT))
+			end
 			if plr ~= LocalPlayer then return end
 			if type(value) ~= "number" or value < GREEN_AT then return end
 			if os.clock() - gfxLastPlay < 0.5 then return end
 			gfxLastPlay = os.clock()
-			warn(("[XRust] green: release=%.4f -> %s"):format(value, tostring(F.GFX.name)))
 			-- let the ball leave your hand before the effect chases it
 			task.delay(0.05, function() pcall(F.GFX.play, F.GFX.name) end)
 		end)
+		warn("[XRust] green detector armed on ShootMeterRelease")
 	else
 		warn("[XRust] ShootMeterRelease not found — custom green effect disabled.")
 	end
@@ -2629,7 +2667,14 @@ skFX:AddDropdown({ Text = "Green Effect", Flag = "gfx_name", Options = effectNam
 	Callback = function(v) F.GFX.name = v end })
 skFX:AddSlider({ Text = "Effect Lifetime", Flag = "gfx_life", Min = 1, Max = 10, Decimals = 1, Default = 4,
 	Suffix = "s", Callback = function(v) F.GFX.life = v end })
+-- Preview runs the SAME path a green does (native handler, clone as fallback).
+-- The old Preview called the clone directly, which is why it looked fine while
+-- real greens did nothing — it was never testing the code that greens use.
 skFX:AddButton({ Text = "Preview", Callback = function()
+	if F.GFX.name == "None" then Library:Notify("Effect", "Pick one first.", 2); return end
+	if F.GFX.play then F.GFX.play(F.GFX.name) end
+end })
+skFX:AddButton({ Text = "Preview (clone only)", Callback = function()
 	if F.GFX.name == "None" then Library:Notify("Effect", "Pick one first.", 2); return end
 	playEffect(F.GFX.name)
 end })
