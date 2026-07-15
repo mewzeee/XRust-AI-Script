@@ -131,6 +131,33 @@ pcall(function()
 	w("exposed keys:")
 	for k, v in pairs(RC) do w(("  %-30s <%s>"):format(tostring(k), type(v))) end
 
+	-- ReplicaController._replicas is the registry of every live replica, keyed
+	-- by id. That's the live data, no id or class guessing needed.
+	local reg = rawget(RC, "_replicas")
+	if type(reg) == "table" then
+		local count = 0
+		for _ in pairs(reg) do count = count + 1 end
+		w("")
+		w(("_replicas: %d live"):format(count))
+		for id, replica in pairs(reg) do
+			breathe()
+			w("")
+			w(("--- Replica id=%s class=%s ---"):format(
+				tostring(id), tostring(type(replica) == "table" and rawget(replica, "Class") or "?")))
+			if type(replica) == "table" then
+				local data = rawget(replica, "Data")
+				if type(data) == "table" then
+					dump(data, "  ", 1, 60)
+				else
+					w("  (no .Data — keys:)")
+					for k in pairs(replica) do w("    " .. tostring(k)) end
+				end
+			end
+		end
+	else
+		w("_replicas not a table: " .. type(reg))
+	end
+
 	-- ReplicaOfClassCreated fires for replicas that ALREADY exist as well as
 	-- new ones, so this catches our live data without needing its id.
 	if type(RC.ReplicaOfClassCreated) == "function" then

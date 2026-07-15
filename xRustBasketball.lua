@@ -1888,19 +1888,65 @@ local skP2 = skinPage:AddPanel("Custom")
 -- Cloning those onto the ball yourself reproduces the look for YOU. Nobody else
 -- sees it. The simple path is also still here: the ball's plain skin is just
 -- Mesh.TextureId on its SpecialMesh (default 13818804314).
-F.Skin = { enabled = false, preset = "None", aura = false,
+F.Skin = { enabled = false, skin = "None", preset = "None", aura = false,
 	texture = "", mesh = "", color = Color3.fromRGB(255, 255, 255),
 	useColor = false, material = "Fabric", defaultTex = nil, defaultMesh = nil }
 
 local RS = game:GetService("ReplicatedStorage")
 local SKIN_TAG = "XRUST_SKIN"
 
+-- ── the game's own catalogue ───────────────────────────────────────────
+-- ReplicatedStorage.Modules.Items is the master list: Skins (452), Effects
+-- (484), Emotes, Banners, Cases, Dunks, Tattoos, Sleeves, Abilities.
+-- require() on a shared data module hands back the very table the game uses.
+local ITEMS do
+	local m = RS:FindFirstChild("Modules")
+	local mod = m and m:FindFirstChild("Items")
+	if mod then
+		local ok, t = pcall(require, mod)
+		ITEMS = ok and type(t) == "table" and t or nil
+	end
+end
+
+-- A catalogue row is an ARRAY, not a keyed table:
+--   Skins.Conqueror = { "Conqueror", 6, 118518517233869, 80008733581423, "Conqueror" }
+--                       [1] label    [2] rarity  [3] BALL TEXTURE  [4] icon  [5] id
+-- [3] is the ball's texture: Skins.Default[3] == 14554890555, which is exactly
+-- what a default ball's Mesh.TextureId reads on a live client. So changing a
+-- skin is: look up [3], write it to Attach.Mesh.TextureId.
+local SKIN_TEX_IDX = 3
+
+local function skinCatalogue()
+	return ITEMS and ITEMS.Skins or nil
+end
+
+local function skinNames()
+	local out = { "None" }
+	local cat = skinCatalogue()
+	if cat then
+		for name in pairs(cat) do table.insert(out, name) end
+		table.sort(out)
+	end
+	return out
+end
+
+-- texture id for a catalogue skin, as an rbxassetid string
+local function skinTexture(name)
+	local cat = skinCatalogue()
+	local row = cat and cat[name]
+	local id = row and row[SKIN_TEX_IDX]
+	if type(id) == "number" and id > 0 then return "rbxassetid://" .. tostring(id) end
+	return nil
+end
+
+-- ── the effect/aura library (separate thing) ───────────────────────────
+-- Assets.Ball holds the VFX prefabs (particles + CUSTOM_AURA), not textures.
 local function skinFolder()
 	local a = RS:FindFirstChild("Assets")
 	return a and a:FindFirstChild("Ball")
 end
 
-local function skinNames()
+local function auraNames()
 	local out = { "None" }
 	local f = skinFolder()
 	if f then
@@ -2134,7 +2180,22 @@ local function applyPreset(name)
 	end
 end
 
-skP:AddDropdown({ Text = "Ball Skin", Flag = "skin_preset", Options = skinNames(), Default = "None",
+-- THE SKIN. All 452 from the game's own catalogue; picking one writes that
+-- skin's texture id straight onto the ball.
+skP:AddDropdown({ Text = "Ball Skin", Flag = "skin_name", Options = skinNames(), Default = "None",
+	Callback = function(v)
+		F.Skin.skin = v
+		local tex = skinTexture(v)
+		if v ~= "None" and not tex then
+			Library:Notify("Skin", "'" .. v .. "' has no texture in the catalogue.", 3)
+		end
+	end })
+
+-- The VFX prefab (particles + character aura) is a SEPARATE library from the
+-- texture — Assets.Ball, not Modules.Items. Keeping them apart is the whole
+-- reason the old "apply Conqueror" never retextured anything: Conqueror's
+-- prefab is particles, its texture lives in the catalogue.
+skP:AddDropdown({ Text = "Ball Effect", Flag = "skin_preset", Options = auraNames(), Default = "None",
 	Callback = function(v)
 		F.Skin.preset = v
 		if F.Skin.enabled then applyPreset(v) end
@@ -2399,7 +2460,10 @@ Library:StartLoop("skin", RunService.Heartbeat, function()
 		end
 	end
 
-	local tex = texUrl(F.Skin.texture)
+	-- Catalogue skin wins; the manual id box is the fallback for anything not
+	-- in Items.Skins. Re-asserted every frame because the game rewrites
+	-- TextureId whenever it hands you a fresh ball.
+	local tex = skinTexture(F.Skin.skin) or texUrl(F.Skin.texture)
 	if tex and m.TextureId ~= tex then pcall(function() m.TextureId = tex end) end
 	local msh = texUrl(F.Skin.mesh)
 	if msh and m.MeshId ~= msh then pcall(function() m.MeshId = msh end) end

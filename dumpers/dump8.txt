@@ -1,0 +1,77 @@
+Basketball Legends data dump — 2026-07-15 22:06:44 UTC
+
+=== CATALOGUE ROW SCHEMA ===
+
+--- Items.Skins.Conqueror ---
+  1 = Conqueror  <string>
+  2 = 6  <number>
+  3 = 118518517233869  <number>
+  4 = 80008733581423  <number>
+  5 = Conqueror  <string>
+
+--- Items.Skins.Royalty ---
+  1 = Royalty  <string>
+  2 = 10  <number>
+  3 = 136110525580824  <number>
+  4 = 95946131654023  <number>
+  5 = Royalty  <string>
+
+--- Items.Skins.Default ---
+  1 = Default  <string>
+  2 = 1  <number>
+  3 = 14554890555  <number>
+  4 = 15001998365  <number>
+
+--- Items.Effects.Helios ---
+  1 = Helios  <string>
+  2 = 5  <number>
+  3 = 17000898757  <number>
+
+--- Items.Effects.Default ---
+  1 = Default  <string>
+  2 = 1  <number>
+  3 = 14525176634  <number>
+
+--- Items.Emotes.Griddy ---
+  1 = The Griddy  <string>
+  2 = 10  <number>
+  3 = 0  <number>
+
+--- Items.Banners.Default ---
+  1 = Default  <string>
+  2 = 1  <number>
+  3 = 0  <number>
+
+--- Items.Dunks.Default ---
+  1 = 0  <number>
+  2 = Default  <string>
+  3 = 0  <number>
+  4 = true  <boolean>
+
+Sleeves      13 entries
+Banners      77 entries
+Cases        102 entries
+Effects      484 entries
+Abilities    4 entries
+Emotes       155 entries
+Skins        452 entries
+Tattoos      8 entries
+Dunks        8 entries
+
+=== Controllers.DataController ===
+require failed: Requested module experienced an error while loading
+
+=== ReplicaController ===
+exposed keys:
+  _child_listeners               <table>
+  _class_listeners               <table>
+  GetReplicaById                 <function>
+  InitialDataReceivedSignal      <table>
+  RequestData                    <function>
+  _replicas                      <table>
+  InitialDataReceived            <boolean>
+  NewReplicaSignal               <table>
+  ReplicaOfClassCreated          <function>
+
+=== getgc — tables holding a Skins/Effects map ===
+none
