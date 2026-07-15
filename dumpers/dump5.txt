@@ -1,0 +1,604 @@
+Basketball Legends dump — 2026-07-15 21:21:54 UTC
+place: 14386691987
+
+=== ReplicatedStorage.Assets — TOP LEVEL ===
+Animations_R6                      <Folder      >  0 children
+FanCosmetic                        <Folder      >  5 children
+Fans                               <Folder      >  4 children
+Banners                            <Folder      >  77 children
+EmoteItems                         <Folder      >  131 children
+CaseModels                         <Folder      >  68 children
+Animations_NPC                     <Folder      >  8 children
+MapAssets                          <Folder      >  8 children
+Ball                               <Folder      >  203 children
+Animations_R15                     <Folder      >  249 children
+StreakEffects                      <Folder      >  12 children
+Effects                            <Folder      >  484 children
+Lighting                           <Folder      >  1 children
+ExtraAnims                         <Folder      >  2 children
+Cutscene                           <Folder      >  5 children
+Animations_GENERAL                 <Folder      >  7 children
+Misc                               <Folder      >  36 children
+
+=== SKIN / EFFECT ASSET IDS ===
+
+-- ReplicatedStorage.Assets.FanCosmetic --
+  s.FanCosmetic.Hair.Beautiful Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=16627494
+  s.FanCosmetic.Hair.Beautiful Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=17877254
+  s.FanCosmetic.Hair.Beautiful Hair 3.Mesh mesh=http://www.roblox.com/asset/?id=16627529 tex=http://www.roblox.com/asset/?id=232752887
+  .Assets.FanCosmetic.Hair.Crazy Hair.Mesh mesh=http://www.roblox.com/asset/?id=248341525  tex=http://www.roblox.com/asset/?id=248261757
+  sets.FanCosmetic.Hair.Dreads.SpecialMesh mesh=rbxassetid://4566683953          tex=http://www.roblox.com/asset/?id=4577701741
+  .Assets.FanCosmetic.Hair.Messy Hair.Mesh mesh=http://www.roblox.com/asset/?id=26400959 tex=http://www.roblox.com/asset/?id=26400954
+  e.Assets.FanCosmetic.Hair.Nerd Hair.Mesh mesh=http://www.roblox.com/asset/?id=29938421 tex=http://www.roblox.com/asset/?id=29938532
+  ssets.FanCosmetic.Hair.Scene Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=76056263 tex=http://www.roblox.com/asset/?id=323471838
+  ssets.FanCosmetic.Hair.Scene Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=76056263 tex=http://www.roblox.com/asset/?id=76055088
+  rage.Assets.FanCosmetic.Hat.Glasses.Mesh mesh=http://www.roblox.com/asset/?id=14356597 tex=
+  torage.Assets.FanCosmetic.Misc.Sign.Mesh mesh=http://www.roblox.com/asset/?id=15631335 tex=http://www.roblox.com/asset/?id=14021832108
+  rage.Assets.FanCosmetic.Long Hair 2.Mesh mesh=http://www.roblox.com/asset/?id=13070796 tex=http://www.roblox.com/asset/?id=13070807
+  rage.Assets.FanCosmetic.Long Hair 1.Mesh mesh=http://www.roblox.com/asset/?id=13070796 tex=http://www.roblox.com/asset/?id=13694600
+
+-- ReplicatedStorage.Assets.Ball --
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightB mesh=rbxassetid://15582551984         tex=
+  TOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Wired mesh=rbxassetid://15582552090         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightA mesh=rbxassetid://15582551857         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.LightC mesh=rbxassetid://15582552168         tex=
+  OM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Spikes mesh=rbxassetid://15986950110         tex=
+  STOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Grid mesh=rbxassetid://15986759551         tex=
+  _HOLDER.CUSTOM_SKIN_HOLDER.Pumpkin Inner mesh=rbxassetid://113654461020415     tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.Pumpkin Main mesh=rbxassetid://106172859812846     tex=
+  all.Dragoneye.CUSTOM_AURA.Head.Part.Mesh mesh=rbxassetid://14536927547         tex=rbxassetid://140373351368689
+  KIN_HOLDER.CUSTOM_SKIN_HOLDER.Part.Decal decal=rbxassetid://104753375219322
+  l.TheGhoul.CUSTOM_AURA.LowerTorso.Circle mesh=rbxassetid://131441477649409     tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.001 mesh=rbxassetid://81271660309307      tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.002 mesh=rbxassetid://95355832744309      tex=
+  eGhoul.CUSTOM_AURA.LowerTorso.Circle.004 mesh=rbxassetid://133281049504660     tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  N_HOLDER.CUSTOM_SKIN_HOLDER.EnhancedCone mesh=rbxassetid://785967755           tex=
+  s.Ball.SpiritKing.CUSTOM_AURA.Head.Crown mesh=rbxassetid://4629396661          tex=
+  l.SpiritKing.CUSTOM_AURA.UpperTorso.Wing mesh=rbxassetid://4629427529          tex=
+  ll.SpiritKing.CUSTOM_AURA.RightHand.Claw mesh=rbxassetid://4629396525          tex=
+  all.SpiritKing.CUSTOM_AURA.LeftHand.Claw mesh=rbxassetid://4629396525          tex=
+  TOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.Crown mesh=rbxassetid://4629396661          tex=
+  STOM_AURA.UpperTorso.Gear 5 Cloud Inside mesh=rbxassetid://78575657476277      tex=
+  MaySkin14.CUSTOM_AURA.UpperTorso.Outside mesh=rbxassetid://82341732383276      tex=
+
+-- ReplicatedStorage.Assets.StreakEffects --
+  (StreakEffects: nothing with a texture)
+
+=== FULL SKIN STRUCTURE ===
+
+### ReplicatedStorage.Assets.Ball.Conqueror  <Folder>
+  CUSTOM_SKIN_HOLDER                             <Model           >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER          <Part            > size=0.5, 0.5, 0.5 trans=1.00 anch=false
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder <Part            > size=1.399999976158142, 1.399999976158142, 1.399999976158142 trans=1.00 anch=false
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.W <WeldConstraint  >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.Attachment <Attachment      >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.Attachment.BallEffectAtt <ParticleEmitter >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.Attachment.BallEffectAtt <ParticleEmitter >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.Attachment.BallEffectAtt <ParticleEmitter >
+  CUSTOM_SKIN_HOLDER.CUSTOM_SKIN_HOLDER.AttHolder.BallLight <PointLight      >
+  BallEffect                                     <ParticleEmitter >
+  BallEffect                                     <ParticleEmitter >
+  BallEffect                                     <ParticleEmitter >
+  BallEffect                                     <ParticleEmitter >
+  BallEffect                                     <ParticleEmitter >
+  BallEffect                                     <ParticleEmitter >
+  CUSTOM_AURA                                    <Model           >
+  CUSTOM_AURA.HumanoidRootPart                   <Model           >
+  CUSTOM_AURA.HumanoidRootPart.Aura              <Part            > size=6, 6, 4 trans=1.00 anch=false
+  CUSTOM_AURA.HumanoidRootPart.Aura.Effect       <ParticleEmitter >
+  CUSTOM_AURA.HumanoidRootPart.Aura.Effect       <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso                         <Model           >
+  CUSTOM_AURA.UpperTorso.VFX                     <CFrameValue     > = 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.UpperTorso.VFX.Effect              <ParticleEmitter >
+  CUSTOM_AURA.LeftHand                           <Model           >
+  CUSTOM_AURA.LeftHand.Effect                    <ParticleEmitter >
+  CUSTOM_AURA.LeftHand.Effect                    <ParticleEmitter >
+  CUSTOM_AURA.LeftHand.Effect                    <ParticleEmitter >
+  CUSTOM_AURA.RightHand                          <Model           >
+  CUSTOM_AURA.RightHand.Effect                   <ParticleEmitter >
+  CUSTOM_AURA.RightHand.Effect                   <ParticleEmitter >
+  CUSTOM_AURA.RightHand.Effect                   <ParticleEmitter >
+
+=== COURTS ===
+Player attr Court = 7
+Player attr Team  = nil
+1. PracticeCourt            <Model     > pivot=-59.25, -0.49000000953674316, 380
+      - GameEvent  <BindableEvent>
+      - Basket  <Model>
+      - Bounds  <Model>
+      - Rack  <Model>
+      - 2PT  <Model>
+      - Rack  <Model>
+      - Floor  <Model>
+      - Fence  <Model>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Ground2  <Part>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+2. Court                    <Model     > pivot=-148.5, 7.519999980926514, -77.25
+      - GameEvent  <BindableEvent>
+      - Basket  <Model>
+      - Pad  <Model>
+      - 2PT  <Model>
+      - Bounds  <Model>
+      - Takeback  <Model>
+      - TakebackBox  <Model>
+      - Perimeter  <Model>
+      - Floor  <Model>
+      - Queue  <Model>
+      - Surface  <Part>
+      - Ground2  <Part>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+3. Court                    <Model     > pivot=-148.5, 7.519999980926514, 77.25
+      - Perimeter  <Model>
+      - Pad  <Model>
+      - 2PT  <Model>
+      - Floor  <Model>
+      - TakebackBox  <Model>
+      - Takeback  <Model>
+      - Bounds  <Model>
+      - Queue  <Model>
+      - GameEvent  <BindableEvent>
+      - Basket  <Model>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+      - Ground2  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+4. Court                    <Model     > pivot=59.25, -0.47999998927116394, 380
+      - GameEvent  <BindableEvent>
+      - Queue  <Model>
+      - 2PT  <Model>
+      - TakebackBox  <Model>
+      - Floor  <Model>
+      - Perimeter  <Model>
+      - Takeback  <Model>
+      - Bounds  <Model>
+      - Pad  <Model>
+      - Basket  <Model>
+      - Sidewalk  <Part>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Ground2  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+5. Court                    <Model     > pivot=0, -0.49000000953674316, 0
+      - GameEvent  <BindableEvent>
+      - HomeBasket  <Model>
+      - Perimeter  <Model>
+      - Pad  <Model>
+      - Away2PT  <Model>
+      - Home2PT  <Model>
+      - Bounds  <Model>
+      - Floor  <Model>
+      - AwayBasket  <Model>
+      - Queue  <Model>
+      - Ground2  <Part>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+6. Court                    <Model     > pivot=148.5, 7.519999980926514, 77.25
+      - GameEvent  <BindableEvent>
+      - Bounds  <Model>
+      - Queue  <Model>
+      - Floor  <Model>
+      - 2PT  <Model>
+      - Perimeter  <Model>
+      - Takeback  <Model>
+      - Basket  <Model>
+      - Pad  <Model>
+      - TakebackBox  <Model>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Surface  <Part>
+      - Ground2  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+7. Court                    <Model     > pivot=0, -0.49000000953674316, -213.75
+      - GameEvent  <BindableEvent>
+      - Bounds  <Model>
+      - 2PT  <Model>
+      - Pad  <Model>
+      - Perimeter  <Model>
+      - TakebackBox  <Model>
+      - Takeback  <Model>
+      - Basket  <Model>
+      - Queue  <Model>
+      - Floor  <Model>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground2  <Part>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+8. Court                    <Model     > pivot=148.5, 7.519999980926514, -77.25
+      - GameEvent  <BindableEvent>
+      - Basket  <Model>
+      - Queue  <Model>
+      - Floor  <Model>
+      - Pad  <Model>
+      - TakebackBox  <Model>
+      - Bounds  <Model>
+      - Takeback  <Model>
+      - 2PT  <Model>
+      - Perimeter  <Model>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Surface  <Part>
+      - Ground2  <Part>
+      - Ground  <Part>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+9. Court                    <Model     > pivot=151.5, -0.49000000953674316, -213.75
+      - Takeback  <Model>
+      - Pad  <Model>
+      - Queue  <Model>
+      - GameEvent  <BindableEvent>
+      - Floor  <Model>
+      - Perimeter  <Model>
+      - Basket  <Model>
+      - 2PT  <Model>
+      - Bounds  <Model>
+      - TakebackBox  <Model>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Surface  <Part>
+      - Ground2  <Part>
+      - Bound  <Part>
+10. Court                    <Model     > pivot=0, -0.49000000953674316, 213.75
+      - GameEvent  <BindableEvent>
+      - Queue  <Model>
+      - Basket  <Model>
+      - Bounds  <Model>
+      - 2PT  <Model>
+      - Takeback  <Model>
+      - Pad  <Model>
+      - TakebackBox  <Model>
+      - Floor  <Model>
+      - Perimeter  <Model>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Ground2  <Part>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+11. Court                    <Model     > pivot=151.5, -0.49000000953674316, 213.75
+      - Queue  <Model>
+      - Takeback  <Model>
+      - 2PT  <Model>
+      - TakebackBox  <Model>
+      - Pad  <Model>
+      - Perimeter  <Model>
+      - Floor  <Model>
+      - Basket  <Model>
+      - Bounds  <Model>
+      - GameEvent  <BindableEvent>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Bound  <Part>
+      - Surface  <Part>
+      - Ground2  <Part>
+12. Court                    <Model     > pivot=-151.5, -0.49000000953674316, 213.75
+      - Pad  <Model>
+      - TakebackBox  <Model>
+      - Floor  <Model>
+      - Takeback  <Model>
+      - Perimeter  <Model>
+      - Bounds  <Model>
+      - 2PT  <Model>
+      - Basket  <Model>
+      - Queue  <Model>
+      - GameEvent  <BindableEvent>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Ground2  <Part>
+      - Surface  <Part>
+      - Bound  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+13. Court                    <Model     > pivot=-151.5, -0.49000000953674316, -213.75
+      - Queue  <Model>
+      - Bounds  <Model>
+      - GameEvent  <BindableEvent>
+      - Basket  <Model>
+      - TakebackBox  <Model>
+      - Floor  <Model>
+      - 2PT  <Model>
+      - Takeback  <Model>
+      - Pad  <Model>
+      - Perimeter  <Model>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Sidewalk  <Part>
+      - Bound  <Part>
+      - Surface  <Part>
+      - Sidewalk  <Part>
+      - Ground  <Part>
+      - Ground2  <Part>
+
+=== KNIT VisualService ===
+BanService
+    RE  <Folder>
+    Panel  <RemoteEvent>
+    RF  <Folder>
+    OverseerAction  <RemoteFunction>
+MonetizationService
+SeasonService
+    RE  <Folder>
+    Claim  <RemoteEvent>
+StockBundleService
+    RF  <Folder>
+    GetAllStock  <RemoteFunction>
+    GetStock  <RemoteFunction>
+    RE  <Folder>
+    StockUpdated  <RemoteEvent>
+LevelService
+    RF  <Folder>
+    Reset  <RemoteFunction>
+    Prestige  <RemoteFunction>
+ControlService
+    RE  <Folder>
+    PumpFake  <RemoteEvent>
+    ShootMeterRelease  <RemoteEvent>
+    Shoot  <RemoteEvent>
+    Screen  <RemoteEvent>
+    DisconnectM6D  <RemoteEvent>
+    StartDribble  <RemoteEvent>
+    Emote  <RemoteEvent>
+    Dunk  <RemoteEvent>
+    ShootMeterCancel  <RemoteEvent>
+    Posting  <RemoteEvent>
+    SelfDie  <RemoteEvent>
+    PostBlocked  <RemoteEvent>
+    StartDunk  <RemoteEvent>
+    ShootMeterStart  <RemoteEvent>
+    Pass  <RemoteEvent>
+    StopEmote  <RemoteEvent>
+    CreateM6D  <RemoteEvent>
+    Steal  <RemoteEvent>
+    StartShoot  <RemoteEvent>
+    Guard  <RemoteEvent>
+    Block  <RemoteEvent>
+    LeaveQueue  <RemoteEvent>
+VisualService
+    RE  <Folder>
+    Effects  <RemoteEvent>
+EventService
+    RF  <Folder>
+    GetStats  <RemoteFunction>
+    RE  <Folder>
+    Claim  <RemoteEvent>
+    Contribute  <RemoteEvent>
+KeybindService
+    RE  <Folder>
+    ResetAllKeybinds  <RemoteEvent>
+    SetKeybind  <RemoteEvent>
+    SetMobileLayout  <RemoteEvent>
+    ResetKeybind  <RemoteEvent>
+WebService
+AchievementService
+DataService
+GiftBoxService
+    RF  <Folder>
+    AttemptFinishOpenGift  <RemoteFunction>
+    AttemptStartOpenGift  <RemoteFunction>
+BlankService
+PlayerService
+    RF  <Folder>
+    Ping  <RemoteFunction>
+    SetGift  <RemoteFunction>
+    JoinUser  <RemoteFunction>
+    RejoinGame  <RemoteFunction>
+    RE  <Folder>
+    Options  <RemoteEvent>
+    WatchAd  <RemoteEvent>
+    CreateServer  <RemoteEvent>
+    NoForget  <RemoteEvent>
+    Settings  <RemoteEvent>
+    HideStreak  <RemoteEvent>
+    ServerTransfer  <RemoteEvent>
+    Teleport  <RemoteEvent>
+    HideTag  <RemoteEvent>
+    AFKToggle  <RemoteEvent>
+    MeterOptions  <RemoteEvent>
+GameService
+NewStatService
+    RF  <Folder>
+    GetStats  <RemoteFunction>
+AudioService
+LatencyService
+ForeverPackService
+    RF  <Folder>
+    AttemptClaim  <RemoteFunction>
+SalesService
+    RE  <Folder>
+    RAPCacheUpdated  <RemoteEvent>
+    RF  <Folder>
+    GetCategoryRAP  <RemoteFunction>
+    GetFullCache  <RemoteFunction>
+    IsCacheReady  <RemoteFunction>
+    GetRAP  <RemoteFunction>
+ServerRewind
+CodeService
+    RF  <Folder>
+    PaidSpinner  <RemoteFunction>
+    ParkSpinner  <RemoteFunction>
+    ClaimParkSpinnerReward  <RemoteFunction>
+    Daily  <RemoteFunction>
+    Redeem  <RemoteFunction>
+QuestService
+    RE  <Folder>
+    Claim  <RemoteEvent>
+CommandService
+BrowserService
+TradingService
+    RF  <Folder>
+    AttemptTradeAction  <RemoteFunction>
+    AttemptSendTradeRequest  <RemoteFunction>
+    AttemptAcceptTradeRequest  <RemoteFunction>
+    AttemptCancelTradeRequest  <RemoteFunction>
+EconomyService
+    RE  <Folder>
+    BuyCase  <RemoteEvent>
+    Handle  <RemoteEvent>
+    Unbox  <RemoteEvent>
+    Delete  <RemoteEvent>
+    Jersey  <RemoteEvent>
+    Equip  <RemoteEvent>
+LiveEventService
+ClanService
+    RE  <Folder>
+    ClanDataUpdated  <RemoteEvent>
+    OutboundRequestsUpdated  <RemoteEvent>
+    ClanQuestsUpdated  <RemoteEvent>
+    InviteDataUpdated  <RemoteEvent>
+    ClanRequestInboxUpdated  <RemoteEvent>
+    ClanStatsChanged  <RemoteEvent>
+    ClanInvitesSentUpdated  <RemoteEvent>
+    RF  <Folder>
+    GetClanData  <RemoteFunction>
+    GetMyContribution  <RemoteFunction>
+    AcceptJoinRequest  <RemoteFunction>
+    GetClanStats  <RemoteFunction>
+    KickMember  <RemoteFunction>
+    GetClansInServer  <RemoteFunction>
+    GetMatchHistory  <RemoteFunction>
+    RenameClan  <RemoteFunction>
+    ClaimSubdivisionReward  <RemoteFunction>
+    CreateClan  <RemoteFunction>
+    AcceptInvite  <RemoteFunction>
+    LookupClan  <RemoteFunction>
+    CancelJoinRequest  <RemoteFunction>
+    RevokeInvite  <RemoteFunction>
+    UpdateDescription  <RemoteFunction>
+    UpdateClanIcon  <RemoteFunction>
+    DemoteMember  <RemoteFunction>
+    DeclineAllJoinRequests  <RemoteFunction>
+    GetLeaderboard  <RemoteFunction>
+    PromoteMember  <RemoteFunction>
+    TransferOwnership  <RemoteFunction>
+    SendInvite  <RemoteFunction>
+    GetInboundInvites  <RemoteFunction>
+    GetPendingRequests  <RemoteFunction>
+    LeaveClan  <RemoteFunction>
+    DeclineJoinRequest  <RemoteFunction>
+    SendJoinRequest  <RemoteFunction>
+    GetMySeasonContribution  <RemoteFunction>
+    GetClanMembers  <RemoteFunction>
+    DeclineInvite  <RemoteFunction>
+    DisbandClan  <RemoteFunction>
+
+=== YOUR EQUIPPED STATE ===
+Player                   attr  OVR                          = 60
+Player                   attr  SpawnTick                    = 72378
+Player                   attr  SE                           = true
+Player                   attr  Loaded                       = true
+Player                   attr  Prestige                     = 0
+Player                   attr  _INIT                        = true
+Player                   attr  Court                        = 7
+Player                   attr  ST                           = true
+Player                   attr  InClan                       = false
+
+=== REMOTES THAT LOOK COSMETIC ===
+RemoteEvent      ReplicatedStorage.Packages.Knit.Services.VisualService.RE.Effects
+
+=== LIVE BALL CONTENTS  (equip an effect, then watch this) ===
+ball: Workspace.sillysigma4124.Basketball  <Tool>
+  Attach                                               <Part            > size=1.4000003337860107, 1.4000003337860107, 1.4000003337860107 trans=0.00 anch=false
+  Attach.Hit1                                          <Sound           >
+  Attach.Start                                         <Sound           >
+  Attach.Bounce                                        <Sound           >
+  Attach.Gravity                                       <VectorForce     >
+  Attach.Att                                           <Attachment      >
+  Attach.A0                                            <Attachment      >
+  Attach.A1                                            <Attachment      >
+  Attach.Trail                                         <Trail           >
+  Attach.AP                                            <AlignPosition   >
+  Attach.Mesh                                          <SpecialMesh     >  MeshId=rbxassetid://14536927547  TextureId=rbxassetid://102849528147022  Scale=0.10499999672174454, 0.10499999672174454, 0.10499999672174454
+  Attach.Event                                         <BindableEvent   >
+  Attach.TouchInterest                                 <TouchTransmitter>
+
+=== CHARACTER — non-default children (aura lands here) ===
+HumanoidRootPart       Aura                           <Part>
+HumanoidRootPart       ParticleEmitter                <ParticleEmitter>
+HumanoidRootPart       Rocks                          <ParticleEmitter>
+HumanoidRootPart       Rocks                          <ParticleEmitter>
+HumanoidRootPart       ParticleEmitter                <ParticleEmitter>
+HumanoidRootPart       ParticleEmitter                <ParticleEmitter>
+HumanoidRootPart       ParticleEmitter                <ParticleEmitter>
+HumanoidRootPart       Smoke                          <ParticleEmitter>
+HumanoidRootPart       UpDust                         <ParticleEmitter>
+HumanoidRootPart       Dust                           <ParticleEmitter>
+HumanoidRootPart       Realistic_Contrast             <ParticleEmitter>
+HumanoidRootPart       Rocks2                         <ParticleEmitter>
+HumanoidRootPart       Dust                           <ParticleEmitter>
+HumanoidRootPart       FireSmoke                      <ParticleEmitter>
+HumanoidRootPart       FireSmoke                      <ParticleEmitter>
+HumanoidRootPart       ParticleEmitter                <ParticleEmitter>
+HumanoidRootPart       water                          <ParticleEmitter>
+HumanoidRootPart       Detail1                        <ParticleEmitter>
+HumanoidRootPart       Burst_Main                     <ParticleEmitter>
+(child) Health                                 <Script>
+(child) Body Colors                            <BodyColors>
+RightUpperLeg          STREAK_EFFECT_PART             <Part>
+RightUpperLeg          BodyFlame                      <ParticleEmitter>
+RightUpperLeg          BodyFlame                      <ParticleEmitter>
+LeftUpperLeg           STREAK_EFFECT_PART             <Part>
+LeftUpperLeg           BodyFlame                      <ParticleEmitter>
+LeftUpperLeg           BodyFlame                      <ParticleEmitter>
+LowerTorso             STREAK_EFFECT_PART             <Part>
+LowerTorso             BodyFlame                      <ParticleEmitter>
+LowerTorso             BodyFlame                      <ParticleEmitter>
+Head                   STREAK_EFFECT_PART             <Part>
+Head                   EyeFlame                       <ParticleEmitter>
+Head                   EyeFlame                       <ParticleEmitter>
+Head                   BodyFlame                      <ParticleEmitter>
+Head                   BodyFlame                      <ParticleEmitter>
+(child) GAMEOBJECTS                            <Folder>
+(child) WeaponAccessory                        <Accessory>
+(child) FlowerCrown_AccAccessory               <Accessory>
+(child) HairAccessory                          <Accessory>
+(child) Folder                                 <Folder>
+(child) Basketball                             <Tool>

@@ -2009,19 +2009,17 @@ local function attachClone(src, anchor, tagName)
 	return #parts
 end
 
--- Emitters/lights that hang loose (no part of their own) get mounted on an
--- attachment of ours so they follow the ball.
+-- Mount a loose emitter/light straight onto the part, which is what the game
+-- itself does (the live dump shows the aura's emitters parented directly to
+-- HumanoidRootPart, not to an attachment). This matters: an emitter parented to
+-- a Part fills the part's volume, while one on an Attachment emits from a
+-- single point — mounting them on an attachment quietly changes the effect's
+-- shape into a pinprick.
 local function attachLoose(src, anchor, tagName)
-	local holder = anchor:FindFirstChild(tagName .. "_ATT")
-	if not holder then
-		holder = Instance.new("Attachment")
-		holder.Name = tagName .. "_ATT"
-		holder.Parent = anchor
-	end
 	local c = src:Clone()
 	c.Name = tagName
 	if c:IsA("ParticleEmitter") or c:IsA("Beam") then c.Enabled = true end
-	c.Parent = (c:IsA("PointLight") or c:IsA("SpotLight")) and anchor or holder
+	c.Parent = anchor
 	return 1
 end
 
@@ -2223,6 +2221,75 @@ end
 
 F.GFX.play = playEffect   -- Auto Green calls this via F, since it's defined above
 
+-- ── Streak Effect ─────────────────────────────────────────────────────
+-- The live dump showed STREAK_EFFECT_PART + BodyFlame/EyeFlame parented to
+-- Head/LowerTorso/legs while on a streak — that's Assets.StreakEffects (12 of
+-- them) applied to your character. Same clone trick as the aura.
+F.Streak = { enabled = false, name = "None" }
+
+local function streakFolder()
+	local a = RS:FindFirstChild("Assets")
+	return a and a:FindFirstChild("StreakEffects")
+end
+local function streakNames()
+	local out = { "None" }
+	local f = streakFolder()
+	if f then
+		for _, d in ipairs(f:GetChildren()) do table.insert(out, d.Name) end
+		table.sort(out)
+	end
+	return out
+end
+
+local STREAK_TAG = "XRUST_STREAK"
+local function clearStreak()
+	local c = LocalPlayer.Character
+	if not c then return end
+	for _, d in ipairs(c:GetDescendants()) do
+		if d.Name == STREAK_TAG then pcall(function() d:Destroy() end) end
+	end
+end
+
+local function applyStreak(name)
+	clearStreak()
+	if name == "None" then return end
+	local f = streakFolder()
+	local tpl = f and f:FindFirstChild(name)
+	local char = LocalPlayer.Character
+	if not (tpl and char) then Library:Notify("Streak", "Not found / no character.", 3); return end
+
+	local n = 0
+	-- children named after a limb get mounted there; anything loose goes on the
+	-- torso so it's at least visible
+	for _, group in ipairs(tpl:GetChildren()) do
+		local limb = char:FindFirstChild(group.Name)
+		if limb and limb:IsA("BasePart") then
+			for _, item in ipairs(group:GetChildren()) do
+				if item:IsA("BasePart") or item:IsA("Model") then
+					n = n + attachClone(item, limb, STREAK_TAG)
+				elseif item:IsA("ParticleEmitter") or item:IsA("Beam") or item:IsA("PointLight") then
+					n = n + attachLoose(item, limb, STREAK_TAG)
+				end
+			end
+		elseif group:IsA("ParticleEmitter") or group:IsA("Beam") then
+			local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+			if torso then n = n + attachLoose(group, torso, STREAK_TAG) end
+		end
+	end
+	warn(("[XRust] streak '%s': %d parts"):format(name, n))
+	Library:Notify("Streak", n > 0 and ("Applied " .. name) or "Nothing to attach — see console.", 3, n > 0 and "good" or nil)
+end
+
+skP2:AddToggle({ Text = "Custom Streak", Flag = "streak_enabled", Callback = function(on)
+	F.Streak.enabled = on
+	if on then applyStreak(F.Streak.name) else clearStreak() end
+end })
+skP2:AddDropdown({ Text = "Streak Effect", Flag = "streak_name", Options = streakNames(), Default = "None",
+	Callback = function(v)
+		F.Streak.name = v
+		if F.Streak.enabled then applyStreak(v) end
+	end })
+
 skP2:AddToggle({ Text = "Custom Green Effect", Flag = "gfx_enabled", Callback = function(on) F.GFX.enabled = on end })
 skP2:AddDropdown({ Text = "Green Effect", Flag = "gfx_name", Options = effectNames(), Default = "None",
 	Callback = function(v) F.GFX.name = v end })
@@ -2233,17 +2300,38 @@ skP2:AddButton({ Text = "Preview", Callback = function()
 	playEffect(F.GFX.name)
 end })
 
--- Raw override, for skins that aren't in Assets.Ball or IDs you find yourself.
-skP2:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "13818804314",
+-- THE BALL SKIN. Confirmed from a live dump with a skin equipped: the ball's
+-- look is one property — Attach.Mesh.TextureId on the Tool you're holding.
+--   default ball     : 14554890555
+--   an equipped skin : 102849528147022
+-- Entries in Assets.Ball are mostly EFFECTS (particles + a character aura), not
+-- textures, which is why applying one never retextured the ball. Setting the id
+-- here does. Equip a skin you own and hit "Copy Current IDs" to harvest more.
+skP2:AddDropdown({ Text = "Known Texture", Flag = "skin_texpreset",
+	Options = { "Custom", "Default (14554890555)", "Alt (102849528147022)", "Rack (13818804314)" },
+	Default = "Custom", Callback = function(v)
+		local id = v:match("%((%d+)%)")
+		if id then
+			F.Skin.texture = id
+			local o = Library.Options["skin_tex"]
+			if o and o.Set then o:Set(id) end
+		end
+	end })
+skP2:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "14554890555",
 	Callback = function(v) F.Skin.texture = v end })
-skP2:AddTextbox({ Text = "Mesh ID", Flag = "skin_mesh", Placeholder = "9189139113",
+skP2:AddTextbox({ Text = "Mesh ID", Flag = "skin_mesh", Placeholder = "14536927547",
 	Callback = function(v) F.Skin.mesh = v end })
+-- Harvest loop: equip a skin in the game's own menu, hold the ball, press this.
+-- It reports the id the game just applied, which is that skin's texture.
 skP2:AddButton({ Text = "Copy Current IDs", Callback = function()
 	local m = ballMesh()
-	if not m then Library:Notify("Skin", "No ball found.", 3); return end
-	local s = "MeshId = " .. tostring(m.MeshId) .. "\nTextureId = " .. tostring(m.TextureId)
+	if not m then Library:Notify("Skin", "Hold a ball first.", 3); return end
+	local tex = tostring(m.TextureId):match("(%d+)") or "?"
+	local msh = tostring(m.MeshId):match("(%d+)") or "?"
+	local s = ("TextureId = %s\nMeshId = %s"):format(tex, msh)
 	if typeof(setclipboard) == "function" then pcall(setclipboard, s) end
-	Library:Notify("Skin", "Copied the ball's current IDs.", 3, "good")
+	warn("[XRust] ball ids -> " .. s:gsub("\n", "  "))
+	Library:Notify("Skin", "Texture " .. tex .. " copied.", 4, "good")
 end })
 
 local skinBall = nil
@@ -3112,6 +3200,8 @@ function Library:Destroy()
 		F.GFX.enabled = false
 		for _, fx in ipairs(F.GFX.live) do pcall(function() fx:Destroy() end) end
 		F.GFX.live = {}
+		F.Streak.enabled = false
+		clearStreak()
 	end)
 	pcall(function()
 		-- the ball visuals parent real instances into the ball / workspace, and
