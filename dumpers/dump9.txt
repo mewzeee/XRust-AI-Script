@@ -1,0 +1,35 @@
+Basketball Legends effect spy — 22:44:03 UTC
+
+=== EXISTING HANDLERS ===
+VisualService.RE.Effects -> 1 listener(s)
+   [1] CoreGui.RobloxGui.Modules.Common.Locales.en-us
+ControlService.RE.ShootMeterRelease -> 1 listener(s)
+   [1] CoreGui.RobloxGui.Modules.Common.Locales.en-us
+ControlService.RE.Shoot -> 1 listener(s)
+   [1] CoreGui.RobloxGui.Modules.Common.Locales.en-us
+
+=== LIVE CALLS  (go score — greens, dunks, anything) ===
+listening: VisualService.Effects
+listening: ControlService.ShootMeterRelease
+listening: ControlService.Shoot
+VisualService.Effects (3 args)  [1] EmoteFade <string>  [2] <Model Workspace.mthg9ine.EMOTE_PROP_MODEL>  [3] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.AfacripyPrince>  [2] 0.9859635233879089 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.AfacripyPrince.HumanoidRootPart>  [3] 14 <number>  [4] 0.9859635233879089 <number>  [5] false <boolean>
+VisualService.Effects (6 args)  [1] BallEffect <string>  [2] Aizen <string>  [3] <Part Workspace.Game.Courts.PracticeCourt.Basket.Check2>  [4] <Part Workspace.Basketball>  [5] true <boolean>  [6] 7 <number>
+VisualService.Effects (3 args)  [1] EmoteFade <string>  [2] <Model Workspace.gamercarl1232.EMOTE_PROP_MODEL>  [3] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.gamercarl1232>  [2] 0.9651128053665161 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.gamercarl1232.HumanoidRootPart>  [3] 0 <number>  [4] 0.9651128053665161 <number>  [5] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.Yakahood>  [2] 0.8940603733062744 <number>
+VisualService.Effects (3 args)  [1] EmoteFade <string>  [2] <Model Workspace.gamercarl1232.EMOTE_PROP_MODEL>  [3] true <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.Yakahood>  [2] 0.841296374797821 <number>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.mthg9ine>  [2] 0.8452572226524353 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.mthg9ine.HumanoidRootPart>  [3] 62 <number>  [4] 0.8452572226524353 <number>  [5] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.AfacripyPrince>  [2] 0.9353013038635254 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.AfacripyPrince.HumanoidRootPart>  [3] 0 <number>  [4] 0.9353013038635254 <number>  [5] false <boolean>
+VisualService.Effects (3 args)  [1] EmoteFade <string>  [2] <Model Workspace.gamercarl1232.EMOTE_PROP_MODEL>  [3] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.Dhvffjfi>  [2] 0.9269628524780273 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.Dhvffjfi.HumanoidRootPart>  [3] 6 <number>  [4] 0.9269628524780273 <number>  [5] false <boolean>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.LILsteppa3549>  [2] 0.8505557179450989 <number>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.Yakahood>  [2] 0.6871839761734009 <number>
+ControlService.ShootMeterRelease (2 args)  [1] <Player Players.gamercarl1232>  [2] 0.9977680444717407 <number>
+VisualService.Effects (5 args)  [1] ContestTag <string>  [2] <Part Workspace.gamercarl1232.HumanoidRootPart>  [3] 52 <number>  [4] 0.9977680444717407 <number>  [5] false <boolean>

@@ -1602,11 +1602,10 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 							task.wait()
 						end
 					end)
-					-- NOTE: the custom green effect is NOT fired from here. It used
-					-- to be, which meant it only ever played on greens Auto Green
-					-- produced — nothing happened if you greened by hand, or had
-					-- Auto Green off. A watcher on the meter itself handles it now
-					-- (see "gfxwatch"), so every real green triggers it.
+					-- NOTE: the custom green effect is NOT fired from here. The game
+					-- broadcasts ControlService.RE.ShootMeterRelease(player, value)
+					-- for every release, so that's what triggers it — which also
+					-- covers greens you hit by hand with Auto Green off.
 					if green then playGreenSound() end
 				end
 			end
@@ -2461,48 +2460,103 @@ local function playEffect(name)
 	end)
 end
 
-F.GFX.play = playEffect
+-- ── play it the way the GAME plays it ─────────────────────────────────
+-- Captured live off VisualService.RE.Effects:
+--     ("BallEffect", "Aizen",
+--      Workspace.Game.Courts.<court>.Basket.Check2,   -- the target
+--      Workspace.Basketball,                          -- the ball in flight
+--      true, 7)
+-- So a green effect is played FROM THE BALL TO THE BASKET — it was never a
+-- thing that spawns on your character, which is why cloning the template onto
+-- yourself gave static geometry and no show. The animation lives in the game's
+-- own handler, so call that instead of rebuilding it.
+--
+-- getconnections + calling the listener is not a hook: the game's handler is
+-- untouched, we just invoke it the same way the server would.
+local function knitService(name)
+	local p = RS:FindFirstChild("Packages")
+	local k = p and p:FindFirstChild("Knit")
+	local s = k and k:FindFirstChild("Services")
+	return s and s:FindFirstChild(name)
+end
+
+local function effectsRemote()
+	local vs = knitService("VisualService")
+	local re = vs and vs:FindFirstChild("RE")
+	return re and re:FindFirstChild("Effects")
+end
+
+local function playEffectNative(name)
+	if name == "None" then return false end
+	if typeof(getconnections) ~= "function" then return false end
+	local re = effectsRemote()
+	if not re then return false end
+	local ok, conns = pcall(getconnections, re.OnClientEvent)
+	if not ok or #conns == 0 then return false end
+
+	local myc = getChar()
+	if not myc then return false end
+
+	-- the target the game passes is the basket's Check part on our court
+	local court = currentCourt(myc.HumanoidRootPart.Position)
+	local basket = court and (court:FindFirstChild("Basket")
+		or court:FindFirstChild("HomeBasket") or court:FindFirstChild("AwayBasket"))
+	local check = basket and (basket:FindFirstChild("Check2")
+		or basket:FindFirstChild("Check") or basket:FindFirstChildWhichIsA("BasePart", true))
+
+	-- a shot ball is a direct child of Workspace; fall back to the held one
+	local ball = Workspace:FindFirstChild("Basketball") or findBall()
+	if not (check and ball) then return false end
+
+	local fired = 0
+	for _, c in ipairs(conns) do
+		local fn = rawget(c, "Function")
+		if fn then
+			local sent = pcall(fn, "BallEffect", name, check, ball, true, 7)
+			if sent then fired = fired + 1 end
+		end
+	end
+	warn(("[XRust] native effect '%s' -> %d handler(s), target=%s ball=%s")
+		:format(name, fired, check:GetFullName(), ball:GetFullName()))
+	return fired > 0
+end
+
+F.GFX.play = function(name)
+	-- real thing first; the clone is only a fallback for executors with no
+	-- getconnections, and it will look static because it is
+	if not playEffectNative(name) then playEffect(name) end
+end
 
 -- ── green detector ────────────────────────────────────────────────────
--- Fire the moment the meter READS FULL, not on release.
+-- The game hands us the answer: ControlService.RE.ShootMeterRelease fires
+-- (player, meterValue) for EVERY release in the server —
+--     [1] <Player gamercarl1232>  [2] 0.9977
+-- so there is nothing to infer. No bar polling, no arming, no guessing at when
+-- a release happened (the frame is hidden rather than emptied, so watching
+-- Size.Y for a drop never worked).
 --
--- The previous version armed at full and waited for the bar to drop back /
--- vanish to call that "the release". That never came: the game hides the
--- Shooting frame rather than emptying the bar, so Size.Y stayed at 1, the drop
--- was never seen, and the arm expired silently. Full == green, so just fire
--- there — a fraction early, and impossible to miss. A great never reaches full,
--- so it can't false-fire.
-local gfxArmed, gfxLastPlay = false, 0
+-- This is our own extra :Connect — the game's handler is untouched.
+local gfxLastPlay = 0
+local GREEN_AT = 0.975     -- releases at/above this are greens
 
-local function gfxBar()
-	local pg = LocalPlayer:FindFirstChild("PlayerGui")
-	local vis = pg and pg:FindFirstChild("Visual")
-	local sh = vis and vis:FindFirstChild("Shooting")
-	return sh and sh:FindFirstChild("Bar")
-end
-
-local function fireGreenEffect()
-	if os.clock() - gfxLastPlay < 0.5 then return end   -- one per shot
-	gfxLastPlay = os.clock()
-	pcall(playEffect, F.GFX.name)
-end
-
-Library:StartLoop("gfxwatch", RunService.Heartbeat, function()
-	if Library.Destroyed or not F.GFX.enabled or F.GFX.name == "None" then return end
-	local bar = gfxBar()
-	if not bar then gfxArmed = false; return end
-
-	local y = bar.Size.Y.Scale
-	if y >= 0.98 then
-		if not gfxArmed then
-			gfxArmed = true
-			warn(("[XRust] green detected (bar=%.3f) -> %s"):format(y, tostring(F.GFX.name)))
-			fireGreenEffect()
-		end
-	elseif y < 0.5 then
-		gfxArmed = false   -- rearm for the next shot
+do
+	local cs = knitService("ControlService")
+	local re = cs and cs:FindFirstChild("RE") and cs.RE:FindFirstChild("ShootMeterRelease")
+	if re then
+		Library:Connect(re.OnClientEvent, function(plr, value)
+			if Library.Destroyed or not F.GFX.enabled or F.GFX.name == "None" then return end
+			if plr ~= LocalPlayer then return end
+			if type(value) ~= "number" or value < GREEN_AT then return end
+			if os.clock() - gfxLastPlay < 0.5 then return end
+			gfxLastPlay = os.clock()
+			warn(("[XRust] green: release=%.4f -> %s"):format(value, tostring(F.GFX.name)))
+			-- let the ball leave your hand before the effect chases it
+			task.delay(0.05, function() pcall(F.GFX.play, F.GFX.name) end)
+		end)
+	else
+		warn("[XRust] ShootMeterRelease not found — custom green effect disabled.")
 	end
-end)
+end
 
 -- ── Streak Effect ─────────────────────────────────────────────────────
 -- The live dump showed STREAK_EFFECT_PART + BodyFlame/EyeFlame parented to
