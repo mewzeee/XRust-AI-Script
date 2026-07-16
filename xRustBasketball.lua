@@ -2486,6 +2486,30 @@ local function effectsRemote()
 	return re and re:FindFirstChild("Effects")
 end
 
+-- Describe a connection: where its handler lives, and whether it belongs to a
+-- state we can call into. ForeignState == true means .Function is typically nil
+-- and we can only :Fire it, which tells us nothing about whether it worked.
+local function fxListenerId(c)
+	local bits = {}
+	local okF, fn = pcall(function() return c.Function end)
+	if okF and type(fn) == "function" then
+		local okI, s, l, n = pcall(debug.info, fn, "sln")
+		if okI then
+			table.insert(bits, ("%s:%s%s"):format(tostring(s), tostring(l),
+				(n and n ~= "" ) and (" fn=" .. tostring(n)) or ""))
+		else
+			table.insert(bits, "<fn, no debug.info>")
+		end
+	else
+		table.insert(bits, "no .Function")
+	end
+	for _, field in ipairs({ "ForeignState", "LuaConnection", "Enabled", "State" }) do
+		local ok, v = pcall(function() return c[field] end)
+		if ok and v ~= nil then table.insert(bits, field .. "=" .. tostring(v)) end
+	end
+	return table.concat(bits, " ")
+end
+
 local function playEffectNative(name)
 	if name == "None" then return false end
 	local re = effectsRemote()
@@ -2535,34 +2559,39 @@ local function playEffectNative(name)
 		else
 			local fired = 0
 			for i, c in ipairs(conns) do
+				local src, route = fxListenerId(c), "none"
+
 				-- a connection is USERDATA: rawget() bypasses __index and hands
 				-- back nil, which is why an earlier version silently did nothing.
 				-- Index it normally.
 				local gotFn, fn = pcall(function() return c.Function end)
-				local src = "no .Function (foreign state?)"
-				if gotFn and type(fn) == "function" then
-					local okI, s, l = pcall(debug.info, fn, "sl")
-					src = okI and (tostring(s) .. ":" .. tostring(l)) or "<fn>"
-				end
 
 				local sent, err = false, nil
 				if gotFn and type(fn) == "function" then
+					-- calling .Function runs the handler INLINE, so a throw lands
+					-- in our pcall and "ok" genuinely means it ran
+					route = ".Function"
 					sent, err = pcall(fn, table.unpack(args))
 				end
-				-- some executors expose :Fire instead of a readable .Function
+				-- Some executors hide .Function on a foreign-state connection and
+				-- expose :Fire instead. NOTE: :Fire usually DEFERS — it returns
+				-- true immediately and the handler runs (or throws) later, so a
+				-- "clean" result down this route proves nothing. That is the most
+				-- likely reading of 1/1 ran clean + an empty screen.
 				if not sent then
 					local ok2, err2 = pcall(function() c:Fire(table.unpack(args)) end)
-					if ok2 then sent, err = true, nil else err = err or err2 end
+					if ok2 then
+						route, sent, err = ":Fire (deferred — result unknown)", true, nil
+					else
+						err = err or err2
+					end
 				end
 
-				if sent then
-					fired = fired + 1
-				else
-					-- The handler's own error names the exact field it choked on,
-					-- which is the one thing that turns this from guesswork into a
-					-- fix. pcall was swallowing it.
-					warn(("[XRust] fx: listener[%d] %s -> %s"):format(i, src, tostring(err)))
-				end
+				-- log identity on SUCCESS too. Only logging it on failure is why
+				-- "1/1 ran clean" told us nothing about who actually ran.
+				warn(("[XRust] fx: listener[%d] via %s | %s -> %s"):format(
+					i, route, src, sent and "ok" or ("ERR " .. tostring(err))))
+				if sent then fired = fired + 1 end
 			end
 			warn(("[XRust] fx '%s' -> %d/%d handler(s) ran clean"):format(name, fired, #conns))
 			if fired > 0 then return true end
@@ -2709,6 +2738,73 @@ end })
 skFX:AddButton({ Text = "Preview (clone only)", Callback = function()
 	if F.GFX.name == "None" then Library:Notify("Effect", "Pick one first.", 2); return end
 	playEffect(F.GFX.name)
+end })
+
+-- ── handler probe ─────────────────────────────────────────────────────
+-- "1/1 handler(s) ran clean" and nothing on screen means the args are being
+-- ACCEPTED and dropped — so the question is no longer how to call it, it's what
+-- the handler does with arg[1]. If it dispatches on a key table, a wrong key is
+-- a silent no-op, which is exactly this symptom.
+--
+-- debug.getconstants on the listener lists every string it compares against, so
+-- the real key names come straight out of the game instead of being guessed at.
+-- The stack trace in the console (VisualController.Tools.ObserverShootMeter:171)
+-- also puts the client controllers at RS.Controllers, so the module tree is
+-- readable too. All reads — nothing is hooked and nothing is sent.
+skFX:AddButton({ Text = "Dump FX Handler (console)", Callback = function()
+	local re = effectsRemote()
+	if not re then warn("[XRust] probe: RE.Effects not found"); return end
+	warn("[XRust] ===== FX HANDLER PROBE =====")
+	warn("[XRust] remote: " .. re:GetFullName())
+
+	if typeof(getconnections) ~= "function" then
+		warn("[XRust] probe: no getconnections")
+	else
+		local ok, conns = pcall(getconnections, re.OnClientEvent)
+		if not ok then
+			warn("[XRust] probe: getconnections threw: " .. tostring(conns))
+		else
+			warn(("[XRust] probe: %d listener(s)"):format(#conns))
+			for i, c in ipairs(conns) do
+				warn(("[XRust]  [%d] %s"):format(i, fxListenerId(c)))
+				local okF, fn = pcall(function() return c.Function end)
+				if okF and type(fn) == "function" then
+					-- the strings it compares against == the keys it accepts
+					local okC, consts = pcall(debug.getconstants, fn)
+					if okC and type(consts) == "table" then
+						local strs = {}
+						for _, v in pairs(consts) do
+							if type(v) == "string" and #v > 0 then table.insert(strs, v) end
+						end
+						warn(("[XRust]      constants: %s"):format(table.concat(strs, ", ")))
+					else
+						warn("[XRust]      constants: unavailable (" .. tostring(consts) .. ")")
+					end
+					local okU, ups = pcall(debug.getupvalues, fn)
+					if okU and type(ups) == "table" then
+						for ui, uv in pairs(ups) do
+							warn(("[XRust]      upvalue[%s] = %s <%s>"):format(
+								tostring(ui), tostring(uv), typeof(uv)))
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- what does the client-side effect code look like on disk?
+	local ctrl = RS:FindFirstChild("Controllers")
+	local vc = ctrl and ctrl:FindFirstChild("VisualController")
+	if vc then
+		warn("[XRust] VisualController tree:")
+		for _, d in ipairs(vc:GetDescendants()) do
+			warn(("[XRust]      %s <%s>"):format(d:GetFullName(), d.ClassName))
+		end
+	else
+		warn("[XRust] RS.Controllers.VisualController not found")
+	end
+	warn("[XRust] ===== END PROBE =====")
+	Library:Notify("Effect", "Probe written to console.", 3, "good")
 end })
 
 -- THE BALL SKIN. Confirmed from a live dump with a skin equipped: the ball's
