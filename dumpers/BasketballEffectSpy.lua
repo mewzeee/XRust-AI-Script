@@ -84,9 +84,16 @@ if typeof(getconnections) == "function" and svc then
 			w(("%s.RE.%s -> %s listener(s)"):format(p[1], p[2], ok and #conns or "?"))
 			if ok then
 				for i, c in ipairs(conns) do
-					local fn = rawget(c, "Function")
-					local info = fn and debug.info(fn, "sln")
-					w(("   [%d] %s"):format(i, tostring(info or "?")))
+					-- a connection is USERDATA: rawget() bypasses __index and
+					-- returns nil, so this printed "?" for every listener and
+					-- told us nothing. Index it normally.
+					local gotFn, fn = pcall(function() return c.Function end)
+					local desc = "no .Function (foreign state?)"
+					if gotFn and type(fn) == "function" then
+						local okI, src, ln = pcall(debug.info, fn, "sl")
+						desc = okI and (tostring(src) .. ":" .. tostring(ln)) or "<fn, no debug.info>"
+					end
+					w(("   [%d] %s"):format(i, desc))
 				end
 			end
 		else

@@ -2510,45 +2510,77 @@ local function playEffectNative(name)
 	if not ball then warn("[XRust] fx: no ball") return false end
 
 	local args = { "BallEffect", name, check, ball, true, 7 }
+	warn(("[XRust] fx '%s': target=%s | ball=%s"):format(name, check:GetFullName(), ball:GetFullName()))
 
-	-- Route 1: firesignal fires every listener on the signal, exactly as the
-	-- server arriving would. Cleanest when the executor has it.
-	if typeof(firesignal) == "function" then
-		local ok = pcall(firesignal, re.OnClientEvent, table.unpack(args))
-		if ok then
-			warn(("[XRust] fx '%s' via firesignal -> %s"):format(name, check:GetFullName()))
-			return true
-		end
-	end
-
-	-- Route 2: call the connected handlers directly.
-	-- NOTE: a connection from getconnections is USERDATA — rawget() bypasses
-	-- __index and hands back nil, which is why the first version silently did
-	-- nothing. Index it normally.
+	-- Route 1: call the connected handlers directly.
+	--
+	-- This goes FIRST because it is the only route that reports anything back:
+	-- how many listeners exist, and what the game's handler said if it threw.
+	-- firesignal used to lead, and `pcall(firesignal, ...)` returning ok only
+	-- means it didn't ERROR — so on any executor that has firesignal we logged
+	-- "via firesignal" and returned true whether or not a single thing played,
+	-- and never reached this route at all. That is why the log has been telling
+	-- us success while the screen stays empty.
 	if typeof(getconnections) == "function" then
 		local ok, conns = pcall(getconnections, re.OnClientEvent)
-		if ok and conns and #conns > 0 then
+		if not ok then
+			warn("[XRust] fx: getconnections threw: " .. tostring(conns))
+		elseif not conns or #conns == 0 then
+			-- Nothing is listening on the RemoteEvent itself. If the game reaches
+			-- its handler through a wrapper (Knit middleware, a Signal class), the
+			-- listener lives on the wrapper and replaying the wire here can never
+			-- work — it would have to be fired on that inner signal instead.
+			warn("[XRust] fx: 0 listeners on RE.Effects — the handler is not on this signal")
+			return false
+		else
 			local fired = 0
-			for _, c in ipairs(conns) do
-				local sent = false
-				-- .Function on most executors
+			for i, c in ipairs(conns) do
+				-- a connection is USERDATA: rawget() bypasses __index and hands
+				-- back nil, which is why an earlier version silently did nothing.
+				-- Index it normally.
 				local gotFn, fn = pcall(function() return c.Function end)
+				local src = "no .Function (foreign state?)"
 				if gotFn and type(fn) == "function" then
-					sent = pcall(fn, table.unpack(args))
+					local okI, s, l = pcall(debug.info, fn, "sl")
+					src = okI and (tostring(s) .. ":" .. tostring(l)) or "<fn>"
 				end
-				-- some expose :Fire instead
+
+				local sent, err = false, nil
+				if gotFn and type(fn) == "function" then
+					sent, err = pcall(fn, table.unpack(args))
+				end
+				-- some executors expose :Fire instead of a readable .Function
 				if not sent then
-					sent = pcall(function() c:Fire(table.unpack(args)) end)
+					local ok2, err2 = pcall(function() c:Fire(table.unpack(args)) end)
+					if ok2 then sent, err = true, nil else err = err or err2 end
 				end
-				if sent then fired = fired + 1 end
+
+				if sent then
+					fired = fired + 1
+				else
+					-- The handler's own error names the exact field it choked on,
+					-- which is the one thing that turns this from guesswork into a
+					-- fix. pcall was swallowing it.
+					warn(("[XRust] fx: listener[%d] %s -> %s"):format(i, src, tostring(err)))
+				end
 			end
-			warn(("[XRust] fx '%s' -> %d/%d handler(s), target=%s"):format(name, fired, #conns, check:GetFullName()))
-			return fired > 0
+			warn(("[XRust] fx '%s' -> %d/%d handler(s) ran clean"):format(name, fired, #conns))
+			if fired > 0 then return true end
+			return false
 		end
-		warn("[XRust] fx: getconnections returned no listeners")
-	else
-		warn("[XRust] fx: executor has no firesignal or getconnections")
 	end
+
+	-- Route 2: firesignal fires every listener on the signal, exactly as the
+	-- server arriving would — but it reports nothing at all, so it is only the
+	-- fallback for executors with no getconnections.
+	if typeof(firesignal) == "function" then
+		local ok, err = pcall(firesignal, re.OnClientEvent, table.unpack(args))
+		warn(("[XRust] fx '%s' via firesignal: %s"):format(name,
+			ok and "no error (cannot tell if it played)" or tostring(err)))
+		return ok
+	end
+
+	warn("[XRust] fx: executor has no getconnections or firesignal")
 	return false
 end
 
