@@ -1307,11 +1307,12 @@ end
 -- a category that already exists — Ball Visuals lives in Visuals but is built
 -- long before the Visuals section, so the rail has to be defined first.
 local ShootCat = Library:AddCategory("Shooting", 1)
-local GuardCat = Library:AddCategory("Guarding", 2)
-local SkinCat  = Library:AddCategory("Skins", 3)
-local VisCat   = Library:AddCategory("Visuals", 4)
-local PLCat    = Library:AddCategory("PlayerList", 5)
-local ConfCat  = Library:AddCategory("Config", 6)
+local FarmCat  = Library:AddCategory("Auto Farm", 2)
+local GuardCat = Library:AddCategory("Guarding", 3)
+local SkinCat  = Library:AddCategory("Skins", 4)
+local VisCat   = Library:AddCategory("Visuals", 5)
+local PLCat    = Library:AddCategory("PlayerList", 6)
+local ConfCat  = Library:AddCategory("Config", 7)
 
 --== Auto Green ==--
 local greenPage = ShootCat:AddTab("Auto Green")
@@ -3222,6 +3223,215 @@ Library:StartLoop("rebound", RunService.RenderStepped, function()
 		hrp.AssemblyLinearVelocity = Vector3.zero
 	end
 end)
+
+--=====================================================================
+--  AUTO FARM  (queue -> play -> win -> repeat)
+--=====================================================================
+-- HONEST STATE: the in-match PLAY loop is the solid part -- it drives the same
+-- pieces the manual toggles use (shoot when you hold the ball, guard when the
+-- opponent does, chase a loose ball). The QUEUE side is a first pass built from
+-- the court dump (each court has a Pad/Queue at its far end): it walks onto a
+-- pad and waits. The exact JOIN handshake and the WIN signal are not confirmed
+-- yet (that needs BasketballFarmRecon captured during a real 1v1), so
+-- match-start and match-over here are heuristics, the thresholds are exposed,
+-- and every transition logs so we can tighten it against a real game.
+local farmPage = FarmCat:AddTab("Auto Farm")
+local farmP  = farmPage:AddPanel("Auto Farm")
+local farmP2 = farmPage:AddPanel("Tuning")
+
+F.Farm = {
+	enabled = false, state = "idle", oneVone = true, log = true,
+	since = 0, lastInMatch = 0, lastShot = 0, wins = 0,
+	idleReturn = 3.0,   -- opponent/meter gone this long = match over
+	shootEvery = 0.9,   -- seconds between shot attempts while holding the ball
+	reach = 260,        -- how far to look for courts / queued players
+}
+
+local function farmLog(msg) if F.Farm.log then warn("[XRust][farm] " .. msg) end end
+local function farmSetState(s)
+	if F.Farm.state ~= s then
+		F.Farm.state = s
+		F.Farm.since = os.clock()
+		farmLog("state -> " .. s)
+	end
+end
+
+-- other players whose character currently sits inside court `c`
+local function playersOnCourt(c)
+	local out = {}
+	if not c then return out end
+	local ok, ccf, csize = pcall(function() return c:GetBoundingBox() end)
+	if not ok then return out end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local rel = ccf:PointToObjectSpace(hrp.Position)
+				if math.abs(rel.X) <= csize.X / 2 and math.abs(rel.Z) <= csize.Z / 2 then
+					table.insert(out, p)
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- the pad you stand on to queue for a 1v1 (dump: Pad / Queue at the court's end)
+local function courtPad(c)
+	if not c then return nil end
+	local pad = c:FindFirstChild("Pad") or c:FindFirstChild("Queue") or c:FindFirstChild("Surface")
+	if not pad then return nil end
+	local okp, cf = pcall(function() return pad:GetPivot() end)
+	return okp and cf.Position or nil
+end
+
+-- walk toward a world position with the Humanoid; true once within tol
+local function farmWalkTo(pos, tol)
+	local myc = getChar()
+	if not (myc and pos) then return false end
+	local hrp = myc.HumanoidRootPart
+	local hum = myc:FindFirstChildOfClass("Humanoid")
+	local flat = Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)
+	if flat.Magnitude <= (tol or 6) then
+		if hum then hum:Move(Vector3.zero, false) end
+		return true
+	end
+	if hum then hum:Move(flat.Unit, false) end
+	return false
+end
+
+-- face the hoop so the shot travels toward it
+local function farmFaceHoop()
+	local myc = getChar()
+	if not myc then return end
+	local hrp = myc.HumanoidRootPart
+	local hoop = nearestHoop(hrp.Position)
+	if hoop then hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(hoop.X, hrp.Position.Y, hoop.Z)) end
+end
+
+-- shoot through the REAL green path: press the shoot key so the game's own shot
+-- fires and the Auto Green handler (rage + green) rides along. Legit uses its
+-- tuned hold; Blatant needs a longer hold so the meter loop can lock first.
+local function farmShoot()
+	if os.clock() - F.Farm.lastShot < F.Farm.shootEvery then return end
+	F.Farm.lastShot = os.clock()
+	farmFaceHoop()
+	if F.Green.mode == "Legit" then
+		if F.Green.macro then F.Green.macro() end
+	elseif VIM then
+		task.spawn(function()
+			local k = F.Green.key
+			pcall(function()
+				if typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType then
+					VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0); task.wait(0.45); VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+				else
+					VIM:SendKeyEvent(true, k, false, game); task.wait(0.45); VIM:SendKeyEvent(false, k, false, game)
+				end
+			end)
+		end)
+	end
+end
+
+-- am I in a live match? heuristic: an opponent shares my court AND the shot
+-- meter UI exists (the game only builds Visual.Shooting during a match).
+local function farmInMatch()
+	local myc = getChar()
+	if not myc then return false end
+	local court = currentCourt(myc.HumanoidRootPart.Position)
+	return (#playersOnCourt(court) >= 1) and (shootingBar() ~= nil)
+end
+
+-- pick a court to queue on: prefer one with exactly ONE player waiting (a 1v1 to
+-- join). With "1v1 only" that's the only kind we take; otherwise fall back to the
+-- nearest court that has a pad.
+local function farmFindCourt()
+	local courts = courtsFolder()
+	local myc = getChar()
+	if not (courts and myc) then return nil end
+	local from = myc.HumanoidRootPart.Position
+	local waiter, nearest, wD, nD = nil, nil, math.huge, math.huge
+	for _, c in ipairs(courts:GetChildren()) do
+		local pad = courtPad(c)
+		if pad and (pad - from).Magnitude <= F.Farm.reach then
+			local d = (pad - from).Magnitude
+			local n = #playersOnCourt(c)
+			if d < nD then nearest, nD = c, d end
+			if n == 1 and d < wD then waiter, wD = c, d end
+		end
+	end
+	if F.Farm.oneVone then return waiter end
+	return waiter or nearest
+end
+
+local farmCourt = nil
+Library:StartLoop("farm", RunService.Heartbeat, function()
+	if not F.Farm.enabled or Library.Destroyed then return end
+	if not getChar() then return end
+
+	if farmInMatch() then
+		F.Farm.lastInMatch = os.clock()
+		farmSetState("play")
+		-- possession decides the behaviour, toggling the tuned guard/rebound loops
+		if ballHeld() then
+			F.Guard.enabled, F.Reb.enabled = false, false
+			farmShoot()
+		elseif ballIsLoose() then
+			F.Reb.mode = "Teleport"                        -- snap to the loose ball
+			F.Reb.enabled, F.Guard.enabled = true, false
+		else
+			F.Guard.enabled, F.Reb.enabled = true, false   -- opponent has it
+		end
+		return
+	end
+
+	-- out of a match: stop the sub-behaviours so they don't drag us around
+	F.Guard.enabled, F.Reb.enabled = false, false
+
+	if F.Farm.state == "play" then
+		-- we were playing and the match signal is gone -> count it and move on
+		if os.clock() - F.Farm.lastInMatch > F.Farm.idleReturn then
+			F.Farm.wins = F.Farm.wins + 1
+			farmLog("match over (#" .. F.Farm.wins .. ") -> seeking next")
+			farmCourt = nil
+			farmSetState("seek")
+		end
+		return
+	end
+
+	if F.Farm.state ~= "seek" and F.Farm.state ~= "queue" then farmSetState("seek") end
+	if F.Farm.state == "seek" then
+		farmCourt = farmFindCourt()
+		if farmCourt then farmSetState("queue") else return end   -- nobody queuing; rescan next tick
+	end
+	if F.Farm.state == "queue" then
+		local pad = farmCourt and courtPad(farmCourt)
+		if not pad then farmSetState("seek"); return end
+		farmWalkTo(pad, 5)   -- stand on the pad; farmInMatch flips us to play when it starts
+	end
+end)
+
+farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(on)
+	F.Farm.enabled = on
+	if on then
+		F.Green.enabled = true                 -- so the shot key drives rage + green
+		farmSetState("seek")
+		Library:Notify("Auto Farm", "Farming. In-match play is solid; queue/win detection is v1 -- watch the console.", 6, "good")
+	else
+		F.Guard.enabled, F.Reb.enabled = false, false
+		local h = getHumanoid(); if h then h:Move(Vector3.zero, false) end
+		farmSetState("idle")
+	end
+end })
+farmP:AddToggle({ Text = "1v1 Only", Flag = "farm_1v1", Default = true, Callback = function(on) F.Farm.oneVone = on end })
+farmP:AddToggle({ Text = "Log State (console)", Flag = "farm_log", Default = true, Callback = function(on) F.Farm.log = on end })
+farmP:AddLabel("Play loop is solid. Queue-join + win detection are heuristic until a live 1v1 is captured with the recon dumper.")
+
+farmP2:AddSlider({ Text = "Shoot Interval", Flag = "farm_shootivl", Min = 0.3, Max = 3, Decimals = 1, Default = 0.9,
+	Suffix = "s", Callback = function(v) F.Farm.shootEvery = v end })
+farmP2:AddSlider({ Text = "Match-Over Delay", Flag = "farm_over", Min = 1, Max = 10, Decimals = 1, Default = 3,
+	Suffix = "s", Callback = function(v) F.Farm.idleReturn = v end })
+farmP2:AddSlider({ Text = "Search Range", Flag = "farm_reach", Min = 60, Max = 500, Default = 260,
+	Suffix = "m", Callback = function(v) F.Farm.reach = v end })
 
 --=====================================================================
 --  VISUALS CATEGORY
