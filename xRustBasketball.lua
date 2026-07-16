@@ -1667,6 +1667,9 @@ end
 local greenBusy = false
 Library:Connect(UserInputService.InputBegan, function(input, gpe)
 	if gpe or not F.Green.enabled or Library.Destroyed or greenBusy then return end
+	-- the auto-farm fires its own shot (rage + timed key) via VIM; ignore that
+	-- synthetic key here so we don't double-fire rage or re-enter
+	if F.Farm and F.Farm._shooting then return end
 	local k = F.Green.key
 	local match = (typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType)
 		and (input.UserInputType == k) or (input.KeyCode == k)
@@ -3471,21 +3474,36 @@ end
 local function farmShoot()
 	if os.clock() - F.Farm.lastShot < F.Farm.shootEvery then return end
 	F.Farm.lastShot = os.clock()
-	farmFaceHoop()
-	if F.Green.mode == "Legit" then
-		if F.Green.macro then F.Green.macro() end
-	elseif VIM then
-		task.spawn(function()
-			local k = F.Green.key
-			pcall(function()
-				if typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType then
-					VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0); task.wait(0.45); VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-				else
-					VIM:SendKeyEvent(true, k, false, game); task.wait(0.45); VIM:SendKeyEvent(false, k, false, game)
-				end
-			end)
-		end)
+	-- 1) position: 3PT rage teleport (fall back to drop) so the shot is a clean,
+	--    uncontested three, ending up facing the hoop
+	if F.Green.rage then
+		if F.Green.rageMode == "3PT Teleport" then
+			local ok, moved = pcall(rageTeleport)
+			if not ok or moved == false then pcall(rageDrop) end
+		else
+			pcall(rageDrop)
+		end
+	else
+		farmFaceHoop()
 	end
+	-- 2) shoot: press the key, release after the tuned hold -- this IS the legit
+	--    macro (no meter tampering). _shooting makes our own InputBegan handler
+	--    ignore this synthetic key so it doesn't re-fire rage or double up.
+	if not VIM then return end
+	F.Farm._shooting = true
+	task.spawn(function()
+		local k = F.Green.key
+		local hold = (F.Green.mode == "Legit") and (math.clamp(F.Green.macroMs, 5, 1200) / 1000) or 0.45
+		pcall(function()
+			if typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType then
+				VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0); task.wait(hold); VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+			else
+				VIM:SendKeyEvent(true, k, false, game); task.wait(hold); VIM:SendKeyEvent(false, k, false, game)
+			end
+		end)
+		task.wait(0.05)
+		F.Farm._shooting = false
+	end)
 end
 
 -- Am I in a live match? I'm playing iff I'm standing on a court PLAYING surface.
@@ -3536,7 +3554,7 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		farmSetState("play")
 		-- possession decides the behaviour, toggling the tuned guard/rebound loops
 		if ballHeld() then
-			-- I have it: shoot (rage green rides along via the shoot key)
+			-- I have it: shoot (3PT rage + legit macro ride along via the shoot key)
 			F.Guard.enabled, F.Reb.enabled = false, false
 			farmShoot()
 		elseif looseBallOnCourt(court) then
@@ -3545,12 +3563,19 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			F.Reb.mode = "Teleport"
 			F.Reb.enabled, F.Guard.enabled = true, false
 		else
-			-- I don't have it and it's not loose -> the opponent has it: GUARD.
-			-- Keying off opponentHasBall made guard flicker off whenever their ball
-			-- Tool re-parented mid-dribble (that's the "guard stops locking on").
-			-- Teleport mode because the game overrides Humanoid walking in a match.
-			F.Guard.mode = "Teleport"
-			F.Guard.enabled, F.Reb.enabled = true, false
+			-- GUARD only while the opponent actually HOLDS the ball. Guarding
+			-- whenever I simply lacked the ball meant it locked on during dead
+			-- balls too (the "auto guarding them even when they don't have it").
+			-- A 0.4s grace bridges a brief ball-leave mid-dribble so it doesn't
+			-- flicker off. Teleport mode: the game overrides Humanoid walking.
+			local oppHas = opponentHasBall(court)
+			if oppHas then F.Farm._oppBallAt = os.clock() end
+			if oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4 then
+				F.Guard.mode = "Teleport"
+				F.Guard.enabled, F.Reb.enabled = true, false
+			else
+				F.Guard.enabled, F.Reb.enabled = false, false  -- dead ball: wait
+			end
 		end
 		return
 	end
@@ -3588,7 +3613,10 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 	F.Farm.enabled = on
 	if on then
 		F.Green.enabled = true                 -- so the shot key drives rage + green
-		F.Green.rage = true                    -- shoot uncontested (rage), so greens land
+		F.Green.mode = "Legit"                 -- macro shots (timed key hold), not meter tampering
+		F.Green.macroMs = 341                  -- the tuned perfect-hold time
+		F.Green.rage = true                    -- shoot uncontested
+		F.Green.rageMode = "3PT Teleport"      -- 3-point rage green
 		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
 		F.Reb.cooldown = 0.05                  -- near-instant rebound snap (was 0.4)
 		F.Reb.range = 200                      -- grab the ball from anywhere on court
