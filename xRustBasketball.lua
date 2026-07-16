@@ -1468,7 +1468,7 @@ local function rageTeleport()
 	rp.FilterDescendantsInstances = { myc, lastBall }
 
 	local flat = Vector3.new(1, 0, 1)
-	local best, bestScore = nil, -math.huge
+	local best, bestScore, bestOnCourt = nil, -math.huge, false
 	-- why did every candidate get thrown out? counts turn "3PT just doesn't do
 	-- anything" into a specific gate we can point at and fix
 	local rej = { behind = 0, bounds = 0, three = 0, nofloor = 0, farfloor = 0, offcourt = 0, ok = 0 }
@@ -1512,26 +1512,31 @@ local function rageTeleport()
 			else
 				local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
 				if not hit then rej.nofloor = rej.nofloor + 1
-				elseif myFloor and hit.Instance ~= myFloor then rej.offcourt = rej.offcourt + 1
 				else
 					-- floor must be near our own height: rules out rooftops and pits
 					local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
 					if drop > 6 then rej.farfloor = rej.farfloor + 1
 					else
-						rej.ok = rej.ok + 1
+						-- Prefer the court surface, but do NOT hard-reject a different
+						-- floor part: over-rejecting left nothing and dropped you
+						-- through the floor. Penalise it so an on-court spot always
+						-- wins when one exists, off-court only ever a last resort.
+						local offCourt = myFloor ~= nil and hit.Instance ~= myFloor
+						if offCourt then rej.offcourt = rej.offcourt + 1 else rej.ok = rej.ok + 1 end
 						local landed = Vector3.new(spot.X, hit.Position.Y + 3, spot.Z)
 						local score
 						if defender then
-							score = ((landed - defender) * flat).Magnitude       -- as far from them as possible
+							score = ((landed - defender) * flat).Magnitude
 						else
-							score = -((landed - hrp.Position) * flat).Magnitude  -- else: move the least
+							score = -((landed - hrp.Position) * flat).Magnitude
 						end
-						if score > bestScore then best, bestScore = landed, score end
+						if offCourt then score = score - 1e6 end
+						if score > bestScore then best, bestScore, bestOnCourt = landed, score, not offCourt end
 					end
 				end
 			end
 		end
-		if best then break end   -- nearest valid ring is enough
+		if best and bestOnCourt then break end   -- an on-court spot ends the search
 	end
 	if not best then
 		-- name the gate that killed every candidate instead of silently
@@ -1605,7 +1610,7 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 		local green = (F.Green.accuracy >= 100) or (math.random(1, 100) <= F.Green.accuracy)
 		local target = green and 1 or (0.88 + math.random() * 0.06)
 
-		local raged, locked, peak = false, false, 0
+		local raged, locked, peak, lockAt, sounded = false, false, 0, 0, false
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
 			if bar then
@@ -1624,36 +1629,27 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 					end
 				end
 
-				-- Fire ONCE, as a single tween, as late as possible: the closer to
-				-- release, the less time the game has to animate over the top of
-				-- us. Writing bar.Size per frame is what caused the old jitter —
-				-- the game animates the same property, so the two fought, and
-				-- reading it back fed our own output into the next target.
-				-- TweenSize with override=true beats the game's tween cleanly.
 				if y > peak then peak = y end
-					-- The meter SWEEPS up then back down (confirmed). Lock at the
-					-- crest: either the frame we reach the top, OR the moment it
-					-- turns over from a high peak (the last chance to pin the top
-					-- before it drops). Snapping to target from just under the crest
-					-- still lands a green, which is the whole point.
-				if not locked and (y >= target - 0.02 or (peak >= 0.80 and y <= peak - 0.015)) then
+				-- Let the bar climb on its OWN to its crest, then FREEZE it there.
+				-- It rises to the top then falls; we detect the turnover (the first
+				-- frame it stops rising) and hold at that peak. Because we never write
+				-- a value ABOVE where the bar already climbed, there is no jump to the
+				-- top: you watch it climb, then it locks. This replaces the override
+				-- tween, which yanked the bar to full and read as a teleport.
+				if not locked and peak >= 0.5 and y <= peak - 0.01 then
 					locked = true
-					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out,
-						Enum.EasingStyle.Quad, F.Green.speed, true)
-					-- hold it there for as long as the key is down, in case the
-					-- game writes over the finished tween
-					task.spawn(function()
-						local deadline = os.clock() + 1.5
-						while greenKeyDown() and os.clock() < deadline and not Library.Destroyed do
-							-- correct DRIFT in BOTH directions: if the game pushes the
-							-- bar off target after our tween (up OR down), snap it back
-							-- so a held lock genuinely stays put at the top
-							if bar and bar.Parent and math.abs(bar.Size.Y.Scale - target) > 0.004 then
-								bar.Size = UDim2.new(1, 0, target, 0)
-							end
-							task.wait()
-						end
-					end)
+					lockAt = peak
+				end
+				-- while locked, hold at the crest (green) or a shade under it (great:
+				-- accuracy < 100 shades the hold down so it scores a great)
+				if locked then
+					local hold = green and lockAt or (lockAt * target)
+					if math.abs(bar.Size.Y.Scale - hold) > 0.004 then
+						bar.Size = UDim2.new(1, 0, hold, 0)
+					end
+				end
+				if locked and not sounded then
+					sounded = true
 					-- NOTE: the custom green effect is NOT fired from here. The game
 					-- broadcasts ControlService.RE.ShootMeterRelease(player, value)
 					-- for every release, so that's what triggers it — which also
