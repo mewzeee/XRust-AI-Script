@@ -1334,7 +1334,7 @@ local greenP2 = greenPage:AddPanel("Rage")
 --    90  -> 90% of shots green, the rest fall just short (a "great")
 -- Nothing else to tune.
 F.Green = { enabled = false, accuracy = 100, key = Enum.KeyCode.E, requireBall = true,
-	speed = 0.12, sound = false, log = false,
+	speed = 0.12, sound = false, log = false, mode = "Blatant", macroMs = 250,
 	rage = false, rageMode = "Drop", rageDepth = 3, rageHold = 0.6, rageRadius = 30 }
 
 local function shootingBar()
@@ -1352,6 +1352,14 @@ greenP:AddToggle({ Text = "Enabled", Flag = "green_enabled", Callback = function
 end })
 greenP:AddToggle({ Text = "Require Basketball", Flag = "green_ball", Callback = function(on) F.Green.requireBall = on end })
 greenP:AddToggle({ Text = "Green Sound", Flag = "green_sound", Callback = function(on) F.Green.sound = on end })
+-- Blatant = drive the shot meter directly (instant, but the bar value is
+-- fabricated). Legit = a plain input macro: press the shoot key, hold it a fixed
+-- time, release, so the release lands on green with no bar tampering at all. The
+-- hold time is game-specific; tune it until every shot greens.
+greenP:AddDropdown({ Text = "Mode", Flag = "green_mode", Options = { "Blatant", "Legit" }, Default = "Blatant",
+	Callback = function(v) F.Green.mode = v end })
+greenP:AddSlider({ Text = "Macro Hold", Flag = "green_macroms", Min = 10, Max = 600, Default = 250,
+	Suffix = "ms", Callback = function(v) F.Green.macroMs = v end })
 -- 100 = every shot green. Lower it and that % of shots land on green; the rest
 -- stop just short of full, which the game scores as a great instead.
 greenP:AddSlider({ Text = "Shot %", Flag = "green_acc", Min = 50, Max = 100, Default = 100,
@@ -1389,6 +1397,40 @@ local function greenKeyDown()
 	end
 	return UserInputService:IsKeyDown(k)
 end
+
+-- LEGIT MACRO. Instead of writing the meter, actually PRESS the shoot key, hold
+-- it for a fixed time, and release — so the shot fires with a normal input and
+-- the release just happens to land on green. Zero bar tampering. The hold time
+-- is game-specific: tune F.Green.macroMs until every shot greens. Uses
+-- VirtualInputManager, which most executors expose; if it's missing we say so.
+local VIM = nil
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+local macroBusy = false
+local function perfectShotMacro()
+	if macroBusy then return false end
+	if not VIM then Library:Notify("Auto Green", "Legit mode needs VirtualInputManager (executor lacks it).", 4); return false end
+	macroBusy = true
+	task.spawn(function()
+		local k = F.Green.key
+		local hold = math.clamp(F.Green.macroMs, 5, 1200) / 1000
+		pcall(function()
+			if typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType then
+				-- mouse-button shoot key
+				VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+				task.wait(hold)
+				VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+			else
+				VIM:SendKeyEvent(true, k, false, game)
+				task.wait(hold)
+				VIM:SendKeyEvent(false, k, false, game)
+			end
+		end)
+		task.wait(0.05)   -- small debounce so a held trigger doesn't spam shots
+		macroBusy = false
+	end)
+	return true
+end
+F.Green.macro = perfectShotMacro   -- the farm and rage path call this in Legit mode
 
 local function playGreenSound()
 	if not F.Green.sound then return end
@@ -1629,6 +1671,22 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 		and (input.UserInputType == k) or (input.KeyCode == k)
 	if not match then return end
 	if F.Green.requireBall and not ballHeld() then return end
+
+	-- LEGIT mode: fire the timed input macro and stop — no meter tampering. Rage
+	-- still applies so legit shots can also be uncontested. (Tapping the shoot key
+	-- here is the trigger; the macro does the actual timed hold+release.)
+	if F.Green.mode == "Legit" then
+		if F.Green.rage then
+			task.spawn(function()
+				if F.Green.rageMode == "3PT Teleport" then
+					local ok, moved = pcall(rageTeleport)
+					if not ok or moved == false then pcall(rageDrop) end
+				else pcall(rageDrop) end
+			end)
+		end
+		perfectShotMacro()
+		return
+	end
 
 	greenBusy = true
 	task.spawn(function()
@@ -2057,7 +2115,7 @@ local skFX = skinPage:AddPanel("Effects")     -- green effect + streak
 -- Cloning those onto the ball yourself reproduces the look for YOU. Nobody else
 -- sees it. The simple path is also still here: the ball's plain skin is just
 -- Mesh.TextureId on its SpecialMesh (default 13818804314).
-F.Skin = { enabled = false, skin = "None", preset = "None", aura = false,
+F.Skin = { enabled = false, skin = "None", preset = "None", aura = true,
 	texture = "", mesh = "", color = Color3.fromRGB(255, 255, 255),
 	useColor = false, material = "Fabric", defaultTex = nil, defaultMesh = nil }
 
@@ -2378,13 +2436,8 @@ skP:AddDropdown({ Text = "Ball", Flag = "skin_name", Options = skinNames(), Defa
 			Library:Notify("Skin", "'" .. v .. "' has neither a texture nor a prefab.", 3)
 		end
 	end })
-skP:AddToggle({ Text = "Include Aura", Flag = "skin_aura", Callback = function(on)
-	F.Skin.aura = on
-	if F.Skin.enabled then applyPreset(F.Skin.preset) end
-end })
-skP:AddButton({ Text = "Re-apply", Callback = function()
-	if F.Skin.enabled then applyPreset(F.Skin.preset) else Library:Notify("Skin", "Enable it first.", 2) end
-end })
+-- Aura is always included and the skin auto-reapplies every frame (see the loop
+-- below), so the old "Include Aura" toggle and "Re-apply" button are gone.
 skP:AddToggle({ Text = "Tint Ball", Flag = "skin_usecolor", Callback = function(on) F.Skin.useColor = on end })
 skP:AddColorPicker({ Text = "Tint", Flag = "skin_color", Default = Color3.fromRGB(255, 255, 255),
 	Callback = function(c) F.Skin.color = c end })
@@ -2922,12 +2975,8 @@ end })
 -- Entries in Assets.Ball are mostly EFFECTS (particles + a character aura), not
 -- textures, which is why applying one never retextured the ball. Setting the id
 -- here does. Equip a skin you own and hit "Copy Current IDs" to harvest more.
--- The raw-id panel is gone: the Ball dropdown covers all 452 skins by name, so
--- typing texture ids by hand was only ever a workaround for not having the
--- catalogue. The one genuinely useful leftover is the manual override, kept on
--- the Ball panel for anything the catalogue doesn't list.
-skP:AddTextbox({ Text = "Texture ID", Flag = "skin_tex", Placeholder = "override",
-	Callback = function(v) F.Skin.texture = v end })
+-- Texture ids are no longer typed by hand: the Ball dropdown covers all 452
+-- skins by name, so the manual "Texture ID" override was removed.
 
 local skinBall = nil
 Library:StartLoop("skin", RunService.Heartbeat, function()
@@ -2947,10 +2996,9 @@ Library:StartLoop("skin", RunService.Heartbeat, function()
 		end
 	end
 
-	-- Catalogue skin wins; the manual id box is the fallback for anything not
-	-- in Items.Skins. Re-asserted every frame because the game rewrites
+	-- Catalogue texture, re-asserted every frame because the game rewrites
 	-- TextureId whenever it hands you a fresh ball.
-	local tex = skinTexture(F.Skin.skin) or texUrl(F.Skin.texture)
+	local tex = skinTexture(F.Skin.skin)
 	if tex and m.TextureId ~= tex then pcall(function() m.TextureId = tex end) end
 
 	if F.Skin.useColor and b.Color ~= F.Skin.color then
