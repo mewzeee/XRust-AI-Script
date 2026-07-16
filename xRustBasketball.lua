@@ -1431,6 +1431,7 @@ local function rageTeleport()
 
 	local function boxOf(m)
 		if not m then return nil end
+		if m:IsA("BasePart") then return m.CFrame, m.Size end
 		local ok, cf, size = pcall(function() return m:GetBoundingBox() end)
 		if ok and cf then return cf, size end
 		return nil
@@ -1442,9 +1443,19 @@ local function rageTeleport()
 		return math.abs(rel.X) <= size.X / 2 + pad and math.abs(rel.Z) <= size.Z / 2 + pad
 	end
 
-	local bCf, bSize = boxOf(bounds)
-	local tCf, tSize = boxOf(twoPt)
-	local hoop = select(1, boxOf(basket)) and boxOf(basket).Position or nearestHoop(hrp.Position)
+	-- The playable court is the FLOOR surface, NOT the Bounds model. The court
+	-- dump showed Bounds (94 x 88.5) is ~10 studs bigger on every side than the
+	-- painted Ground (74 x 68.5); that slack is exactly why teleporting "inside
+	-- Bounds" still put you past the white lines. Use the floor rectangle, and
+	-- fall back to Bounds only if there is no floor part.
+	local floor = court and (court:FindFirstChild("Ground") or court:FindFirstChild("Floor"))
+	local bCf, bSize = boxOf(floor)
+	if not bCf then bCf, bSize = boxOf(bounds) end
+	-- 2PT here is a tall vertical mesh, not a floor footprint, so inBox on it is
+	-- meaningless. Keep its raw box only to derive the 3-point DISTANCE below.
+	local t2Cf, t2Size = boxOf(twoPt)
+	local bkCf = boxOf(basket)
+	local hoop = (bkCf and bkCf.Position) or nearestHoop(hrp.Position)
 	if not hoop then
 		Library:Notify("Rage Green", "No hoop/court found — falling back to Drop.", 3)
 		return false
@@ -1491,8 +1502,17 @@ local function rageTeleport()
 	local MIN_DEPTH = 6
 	local myFloorHit = Workspace:Raycast(hrp.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
 	local myFloor = myFloorHit and myFloorHit.Instance
-	-- sweep several rings out from the hoop; the first that satisfies
-	-- in-bounds AND outside-2PT AND has floor under it wins
+	-- 3-point DISTANCE: how far from the hoop the twos end. Even though 2PT is a
+	-- vertical mesh, its extent toward court centre marks the arc, so a candidate
+	-- must be at least that deep to score a three. Falls back to MIN_DEPTH (no
+	-- 2PT model = no gate) so it still teleports, just without a 2-vs-3 guarantee.
+	local threeDepth = MIN_DEPTH
+	if t2Cf and t2Size and intoCourt.Magnitude > 0.5 then
+		local reach = ((t2Cf.Position - hoop) * flat):Dot(intoCourt) + math.max(t2Size.X, t2Size.Z) / 2
+		threeDepth = math.max(threeDepth, reach + 2)
+	end
+	-- sweep several rings out from the hoop; the first that is in-bounds, deep
+	-- enough to be a three, and has court floor under it wins
 	for ring = 0, 5 do
 		local r = F.Green.rageRadius + ring * 4
 		for i = 0, 23 do
@@ -1503,12 +1523,11 @@ local function rageTeleport()
 			-- how far into the court this spot is from the baseline; behind the
 			-- hoop is negative and gets thrown out before anything else
 			local depth = intoCourt.Magnitude > 0.5 and ((spot - hoop) * flat):Dot(intoCourt) or MIN_DEPTH
-			-- inside the court, outside the two-point zone
+			-- inside the court floor rectangle, and deep enough to be a three
 			local okBounds = (not bCf) or inBox(spot, bCf, bSize, -3)
-			local okThree  = (not tCf) or (not inBox(spot, tCf, tSize, 1))
 			if depth < MIN_DEPTH then rej.behind = rej.behind + 1
+			elseif depth < threeDepth then rej.three = rej.three + 1
 			elseif not okBounds then rej.bounds = rej.bounds + 1
-			elseif not okThree then rej.three = rej.three + 1
 			else
 				local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
 				if not hit then rej.nofloor = rej.nofloor + 1
@@ -1541,16 +1560,16 @@ local function rageTeleport()
 	if not best then
 		-- name the gate that killed every candidate instead of silently
 		-- returning false, which read to you as "3PT does nothing"
-		warn(("[XRust] 3PT: no spot. court=%s hasBounds=%s has2PT=%s | rejected behind=%d bounds=%d three=%d nofloor=%d offcourt=%d farfloor=%d ok=%d")
-			:format(tostring(court and court.Name), tostring(bCf ~= nil), tostring(tCf ~= nil),
-				rej.behind, rej.bounds, rej.three, rej.nofloor, rej.offcourt, rej.farfloor, rej.ok))
+		warn(("[XRust] 3PT: no spot. court=%s floorBox=%s threeDepth=%.0f | rejected behind=%d three=%d bounds=%d nofloor=%d offcourt=%d farfloor=%d ok=%d")
+			:format(tostring(court and court.Name), tostring(bCf ~= nil), threeDepth,
+				rej.behind, rej.three, rej.bounds, rej.nofloor, rej.offcourt, rej.farfloor, rej.ok))
 		-- nowhere legal on this court — do nothing rather than teleport you
 		-- out of bounds, which is what the old radius-only version did
 		return false
 	end
 
-	warn(("[XRust] 3PT: moved to %s (court=%s, %d valid spots, radius=%d)"):format(
-		tostring(best), tostring(court and court.Name), rej.ok, F.Green.rageRadius))
+	warn(("[XRust] 3PT: moved to %s (court=%s, %d valid spots, radius=%d, threeDepth=%.0f)"):format(
+		tostring(best), tostring(court and court.Name), rej.ok, F.Green.rageRadius, threeDepth))
 	hrp.CFrame = CFrame.new(best, Vector3.new(hoop.X, best.Y, hoop.Z))
 	hrp.AssemblyLinearVelocity = Vector3.zero
 
