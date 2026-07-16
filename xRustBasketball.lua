@@ -3087,6 +3087,12 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 
 	local target = guardTarget()
 	F.Guard.target = target
+	-- while farming, log target acquire/lose so "guard isn't doing anything" is
+	-- answerable (no new local, no spam: fires only on change, only when farming)
+	if F.Farm and F.Farm.enabled and target ~= F.Guard._logged then
+		F.Guard._logged = target
+		warn(("[XRust][farm] guard target = %s (mode=%s)"):format(target and target.Name or "NONE", F.Guard.mode))
+	end
 	local myc = getChar()
 	if not (target and myc) then
 		if F.Guard.hl then F.Guard.hl.Enabled = false end
@@ -3474,7 +3480,11 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			F.Reb.mode = "Teleport"                        -- snap to the loose ball
 			F.Reb.enabled, F.Guard.enabled = true, false
 		elseif opponentHasBall(court) then
-			F.Guard.ballOnly = true                        -- only chase the carrier
+			-- Teleport-guard the carrier: the game overrides Humanoid movement in a
+			-- match, so Legs (walking) does nothing -- CFrame guarding sticks. The
+			-- carrier is the only other player on the court, so nearest = them (no
+			-- need to force ballOnly, which was clobbering the manual guard toggle).
+			F.Guard.mode = "Teleport"
 			F.Guard.enabled, F.Reb.enabled = true, false
 		else
 			F.Guard.enabled, F.Reb.enabled = false, false  -- dead ball between plays: wait
@@ -3513,7 +3523,6 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 	F.Farm.enabled = on
 	if on then
 		F.Green.enabled = true                 -- so the shot key drives rage + green
-		F.Guard.ballOnly = true                -- only ever guard the ball carrier
 		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
 		farmSetState("seek")
 		Library:Notify("Auto Farm", "Farming. Only acts while on a court in a live match -- watch the console.", 6, "good")
