@@ -3324,36 +3324,55 @@ end
 -- Pad is one long strip and the players stand at its two ENDS -- the middle is
 -- the scoreboard, which is where "walk to the pad" wrongly aimed (it looked like
 -- following the other player instead of taking the open side).
+local function padPart(m)
+	if not m then return nil end
+	if m:IsA("BasePart") then return m end
+	return m:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- The two standing pads are Queue.Home and Queue.Away (the neon squares).
+-- Confirmed from the dump: the part under you on a pad is Court.Queue.Home.Home1.
+-- Falls back to the two ends of the Pad strip if Home/Away aren't there.
 local function courtQueueSpots(c)
 	if not c then return {} end
-	local pad = c:FindFirstChild("Pad") or c:FindFirstChild("Queue")
-	if not pad then return {} end
-	local cf, size
-	if pad:IsA("BasePart") then cf, size = pad.CFrame, pad.Size
-	else local ok, bcf, bsz = pcall(function() return pad:GetBoundingBox() end); if ok then cf, size = bcf, bsz else return {} end end
-	local along = (size.X >= size.Z) and Vector3.new(size.X / 2 - 3, 0, 0) or Vector3.new(0, 0, size.Z / 2 - 3)
-	return { (cf * CFrame.new(along)).Position, (cf * CFrame.new(-along)).Position }
+	local q = c:FindFirstChild("Queue")
+	if q then
+		local home = padPart(q:FindFirstChild("Home"))
+		local away = padPart(q:FindFirstChild("Away"))
+		if home and away then return { home.Position, away.Position } end
+	end
+	local pad = c:FindFirstChild("Pad")
+	if pad then
+		local ok, cf, size = pcall(function() return pad:GetBoundingBox() end)
+		if ok then
+			local along = (size.X >= size.Z) and Vector3.new(size.X / 2 - 3, 0, 0) or Vector3.new(0, 0, size.Z / 2 - 3)
+			return { (cf * CFrame.new(along)).Position, (cf * CFrame.new(-along)).Position }
+		end
+	end
+	return {}
 end
 
 local function spotOccupied(pos)
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character then
 			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - pos).Magnitude < 5 then return true end
+			if hrp and (hrp.Position - pos).Magnitude < 4 then return true end
 		end
 	end
 	return false
 end
 
--- The OPEN side of a court whose other side has exactly one waiter = a 1v1 to
--- join. Returns the empty spot to stand on, or nil (both empty / both full).
-local function joinableSpot(c)
+-- Where to stand to get into a 1v1: the OPEN side if someone is already waiting,
+-- or either side of a fully-empty station to wait for an opponent to take the
+-- other. nil only if BOTH sides are taken (a match is starting / underway there).
+local function queueTargetSpot(c)
 	local spots = courtQueueSpots(c)
 	if #spots < 2 then return nil end
 	local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
-	if o1 and not o2 then return spots[2] end
-	if o2 and not o1 then return spots[1] end
-	return nil
+	if o1 and o2 then return nil end
+	if o1 then return spots[2] end
+	if o2 then return spots[1] end
+	return spots[1]   -- both empty: camp one side and wait for someone
 end
 
 -- walk toward a world position with the Humanoid; true once within tol
@@ -3414,21 +3433,28 @@ local function farmInMatch()
 	return #playersOnCourt(court) >= 1, court
 end
 
--- pick the nearest court that has an OPEN 1v1 to join (one side taken, one free)
+-- Pick a court to head to: PREFER one with a waiter already on a pad (match
+-- starts the moment we take the other side), otherwise the nearest fully-empty
+-- station to camp. Skip stations where both sides are taken.
 local function farmFindCourt()
 	local courts = courtsFolder()
 	local myc = getChar()
 	if not (courts and myc) then return nil end
 	local from = myc.HumanoidRootPart.Position
-	local best, bD = nil, math.huge
+	local join, camp, jD, cD = nil, nil, math.huge, math.huge
 	for _, c in ipairs(courts:GetChildren()) do
-		local spot = joinableSpot(c)
-		if spot and (spot - from).Magnitude <= F.Farm.reach then
-			local d = (spot - from).Magnitude
-			if d < bD then best, bD = c, d end
+		local spots = courtQueueSpots(c)
+		if #spots >= 2 then
+			local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
+			local d = math.min((spots[1] - from).Magnitude, (spots[2] - from).Magnitude)
+			if d <= F.Farm.reach then
+				if (o1 ~= o2) and d < jD then join, jD = c, d          -- one waiter: join now
+				elseif (not o1 and not o2) and d < cD then camp, cD = c, d  -- empty: camp
+				end
+			end
 		end
 	end
-	return best
+	return join or camp
 end
 
 local farmCourt = nil
@@ -3473,13 +3499,13 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 	if F.Farm.state ~= "seek" and F.Farm.state ~= "queue" then farmSetState("seek") end
 	if F.Farm.state == "seek" then
 		farmCourt = farmFindCourt()
-		if farmCourt then farmSetState("queue") else return end   -- nobody queuing; rescan next tick
+		if farmCourt then farmSetState("queue") else return end   -- no station free; rescan next tick
 	end
 	if F.Farm.state == "queue" then
-		-- recompute the open side each tick in case it filled or the waiter left
-		local spot = farmCourt and joinableSpot(farmCourt)
-		if not spot then farmSetState("seek"); return end
-		farmWalkTo(spot, 3)   -- stand on the open pad; the match starts when both sides are taken
+		-- recompute the target pad each tick (the open side, or a spot to camp)
+		local spot = farmCourt and queueTargetSpot(farmCourt)
+		if not spot then farmSetState("seek"); return end   -- both sides filled: look elsewhere
+		farmWalkTo(spot, 3)   -- stand on the pad; both sides taken -> game starts in 5s
 	end
 end)
 
