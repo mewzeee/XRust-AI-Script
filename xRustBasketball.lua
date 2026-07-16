@@ -3235,6 +3235,12 @@ end)
 -- yet (that needs BasketballFarmRecon captured during a real 1v1), so
 -- match-start and match-over here are heuristics, the thresholds are exposed,
 -- and every transition logs so we can tighten it against a real game.
+-- Scoped in a `do` block on purpose: Luau caps a function at 200 local
+-- registers, and this file's main chunk was brushing that limit. Keeping every
+-- farm helper inside the block means they're captured into the loop/UI closures
+-- as upvalues and their registers free at `end`, instead of living as ~20
+-- persistent top-level locals. (That "exceeded limit 200" error was this.)
+do
 local farmPage = FarmCat:AddTab("Auto Farm")
 local farmP  = farmPage:AddPanel("Auto Farm")
 local farmP2 = farmPage:AddPanel("Tuning")
@@ -3500,6 +3506,7 @@ farmP2:AddSlider({ Text = "Match-Over Delay", Flag = "farm_over", Min = 1, Max =
 	Suffix = "s", Callback = function(v) F.Farm.idleReturn = v end })
 farmP2:AddSlider({ Text = "Search Range", Flag = "farm_reach", Min = 60, Max = 500, Default = 260,
 	Suffix = "m", Callback = function(v) F.Farm.reach = v end })
+end   -- end farm scope (keeps ~20 helpers out of the main chunk's local registers)
 
 --=====================================================================
 --  VISUALS CATEGORY
