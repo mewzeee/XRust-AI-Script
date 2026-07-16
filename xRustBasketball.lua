@@ -3276,13 +3276,78 @@ local function playersOnCourt(c)
 	return out
 end
 
--- the pad you stand on to queue for a 1v1 (dump: Pad / Queue at the court's end)
-local function courtPad(c)
-	if not c then return nil end
-	local pad = c:FindFirstChild("Pad") or c:FindFirstChild("Queue") or c:FindFirstChild("Surface")
-	if not pad then return nil end
-	local okp, cf = pcall(function() return pad:GetPivot() end)
-	return okp and cf.Position or nil
+-- Floor part directly under us, and whether it's a court PLAYING surface (not a
+-- pad, sidewalk or grass). This is how we tell "in a match on the court" from
+-- "standing in the lobby / on a queue pad" -- the whole reason it was guarding
+-- people while not playing.
+local COURT_FLOOR = { Ground = true, Ground2 = true, Floor = true, Perimeter = true }
+local function floorUnderMe()
+	local myc = getChar()
+	if not myc then return nil end
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = { myc }
+	local hit = Workspace:Raycast(myc.HumanoidRootPart.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
+	return hit and hit.Instance or nil
+end
+local function amOnCourtFloor()
+	local f = floorUnderMe()
+	return f ~= nil and COURT_FLOOR[f.Name] == true
+end
+
+-- an opponent standing on court `c` who actually HOLDS a basketball (nil if none)
+local function opponentHasBall(c)
+	for _, p in ipairs(playersOnCourt(c)) do
+		if p.Character and p.Character:FindFirstChild("Basketball") then return p end
+	end
+	return nil
+end
+
+-- is the live loose ball inside court `c`'s bounds?
+local function looseBallOnCourt(c)
+	if not (c and ballIsLoose()) then return false end
+	local ball = findBall()
+	if not ball or isRacked(ball) then return false end
+	local ok, ccf, csize = pcall(function() return c:GetBoundingBox() end)
+	if not ok then return false end
+	local rel = ccf:PointToObjectSpace(ball.Position)
+	return math.abs(rel.X) <= csize.X / 2 and math.abs(rel.Z) <= csize.Z / 2
+end
+
+-- The two standing spots of a court's queue station (red side / blue side). The
+-- Pad is one long strip and the players stand at its two ENDS -- the middle is
+-- the scoreboard, which is where "walk to the pad" wrongly aimed (it looked like
+-- following the other player instead of taking the open side).
+local function courtQueueSpots(c)
+	if not c then return {} end
+	local pad = c:FindFirstChild("Pad") or c:FindFirstChild("Queue")
+	if not pad then return {} end
+	local cf, size
+	if pad:IsA("BasePart") then cf, size = pad.CFrame, pad.Size
+	else local ok, bcf, bsz = pcall(function() return pad:GetBoundingBox() end); if ok then cf, size = bcf, bsz else return {} end end
+	local along = (size.X >= size.Z) and Vector3.new(size.X / 2 - 3, 0, 0) or Vector3.new(0, 0, size.Z / 2 - 3)
+	return { (cf * CFrame.new(along)).Position, (cf * CFrame.new(-along)).Position }
+end
+
+local function spotOccupied(pos)
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+			if hrp and (hrp.Position - pos).Magnitude < 5 then return true end
+		end
+	end
+	return false
+end
+
+-- The OPEN side of a court whose other side has exactly one waiter = a 1v1 to
+-- join. Returns the empty spot to stand on, or nil (both empty / both full).
+local function joinableSpot(c)
+	local spots = courtQueueSpots(c)
+	if #spots < 2 then return nil end
+	local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
+	if o1 and not o2 then return spots[2] end
+	if o2 and not o1 then return spots[1] end
+	return nil
 end
 
 -- walk toward a world position with the Humanoid; true once within tol
@@ -3332,35 +3397,32 @@ local function farmShoot()
 	end
 end
 
--- am I in a live match? heuristic: an opponent shares my court AND the shot
--- meter UI exists (the game only builds Visual.Shooting during a match).
+-- Am I in a live match? I must be standing ON the court PLAYING surface (not a
+-- pad or the lobby) with an opponent also on the court. Keying off shootingBar()
+-- was the bug: that UI exists in the lobby too, so it "played" everywhere and
+-- guarded people who weren't in a game.
 local function farmInMatch()
+	if not amOnCourtFloor() then return false end
 	local myc = getChar()
-	if not myc then return false end
 	local court = currentCourt(myc.HumanoidRootPart.Position)
-	return (#playersOnCourt(court) >= 1) and (shootingBar() ~= nil)
+	return #playersOnCourt(court) >= 1, court
 end
 
--- pick a court to queue on: prefer one with exactly ONE player waiting (a 1v1 to
--- join). With "1v1 only" that's the only kind we take; otherwise fall back to the
--- nearest court that has a pad.
+-- pick the nearest court that has an OPEN 1v1 to join (one side taken, one free)
 local function farmFindCourt()
 	local courts = courtsFolder()
 	local myc = getChar()
 	if not (courts and myc) then return nil end
 	local from = myc.HumanoidRootPart.Position
-	local waiter, nearest, wD, nD = nil, nil, math.huge, math.huge
+	local best, bD = nil, math.huge
 	for _, c in ipairs(courts:GetChildren()) do
-		local pad = courtPad(c)
-		if pad and (pad - from).Magnitude <= F.Farm.reach then
-			local d = (pad - from).Magnitude
-			local n = #playersOnCourt(c)
-			if d < nD then nearest, nD = c, d end
-			if n == 1 and d < wD then waiter, wD = c, d end
+		local spot = joinableSpot(c)
+		if spot and (spot - from).Magnitude <= F.Farm.reach then
+			local d = (spot - from).Magnitude
+			if d < bD then best, bD = c, d end
 		end
 	end
-	if F.Farm.oneVone then return waiter end
-	return waiter or nearest
+	return best
 end
 
 local farmCourt = nil
@@ -3368,18 +3430,22 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 	if not F.Farm.enabled or Library.Destroyed then return end
 	if not getChar() then return end
 
-	if farmInMatch() then
+	local inMatch, court = farmInMatch()
+	if inMatch then
 		F.Farm.lastInMatch = os.clock()
 		farmSetState("play")
 		-- possession decides the behaviour, toggling the tuned guard/rebound loops
 		if ballHeld() then
 			F.Guard.enabled, F.Reb.enabled = false, false
 			farmShoot()
-		elseif ballIsLoose() then
+		elseif looseBallOnCourt(court) then
 			F.Reb.mode = "Teleport"                        -- snap to the loose ball
 			F.Reb.enabled, F.Guard.enabled = true, false
+		elseif opponentHasBall(court) then
+			F.Guard.ballOnly = true                        -- only chase the carrier
+			F.Guard.enabled, F.Reb.enabled = true, false
 		else
-			F.Guard.enabled, F.Reb.enabled = true, false   -- opponent has it
+			F.Guard.enabled, F.Reb.enabled = false, false  -- dead ball between plays: wait
 		end
 		return
 	end
@@ -3404,9 +3470,10 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		if farmCourt then farmSetState("queue") else return end   -- nobody queuing; rescan next tick
 	end
 	if F.Farm.state == "queue" then
-		local pad = farmCourt and courtPad(farmCourt)
-		if not pad then farmSetState("seek"); return end
-		farmWalkTo(pad, 5)   -- stand on the pad; farmInMatch flips us to play when it starts
+		-- recompute the open side each tick in case it filled or the waiter left
+		local spot = farmCourt and joinableSpot(farmCourt)
+		if not spot then farmSetState("seek"); return end
+		farmWalkTo(spot, 3)   -- stand on the open pad; the match starts when both sides are taken
 	end
 end)
 
@@ -3414,17 +3481,18 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 	F.Farm.enabled = on
 	if on then
 		F.Green.enabled = true                 -- so the shot key drives rage + green
+		F.Guard.ballOnly = true                -- only ever guard the ball carrier
+		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
 		farmSetState("seek")
-		Library:Notify("Auto Farm", "Farming. In-match play is solid; queue/win detection is v1 -- watch the console.", 6, "good")
+		Library:Notify("Auto Farm", "Farming. Only acts while on a court in a live match -- watch the console.", 6, "good")
 	else
 		F.Guard.enabled, F.Reb.enabled = false, false
 		local h = getHumanoid(); if h then h:Move(Vector3.zero, false) end
 		farmSetState("idle")
 	end
 end })
-farmP:AddToggle({ Text = "1v1 Only", Flag = "farm_1v1", Default = true, Callback = function(on) F.Farm.oneVone = on end })
 farmP:AddToggle({ Text = "Log State (console)", Flag = "farm_log", Default = true, Callback = function(on) F.Farm.log = on end })
-farmP:AddLabel("Play loop is solid. Queue-join + win detection are heuristic until a live 1v1 is captured with the recon dumper.")
+farmP:AddLabel("1v1 only: joins a court where one side is taken and the other open. Only acts while on a court in a live match.")
 
 farmP2:AddSlider({ Text = "Shoot Interval", Flag = "farm_shootivl", Min = 0.3, Max = 3, Decimals = 1, Default = 0.9,
 	Suffix = "s", Callback = function(v) F.Farm.shootEvery = v end })
