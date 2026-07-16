@@ -1414,13 +1414,29 @@ local function rageTeleport()
 	local hrp = myc.HumanoidRootPart
 	local origin = hrp.CFrame
 
-	-- Use the court's REAL geometry instead of a radius guess. Every court model
-	-- carries:
-	--   2PT / Home2PT / Away2PT  — the two-point zone. Outside it IS a three.
-	--   Bounds                   — the playable area.
-	--   Basket / Home/AwayBasket — the hoop.
-	-- So "outside the arc but still in bounds" stops being a guess.
-	local court = currentCourt(hrp.Position)
+	-- WHICH COURT am I on? Nearest-pivot picks wrong when courts sit close, and
+	-- currentCourt() leads with LocalPlayer:GetAttribute("Court") which in a match
+	-- points at a FIXED index -- that is why 3PT only ever worked on one court.
+	-- The reliable answer is the court that OWNS the floor part under our feet, so
+	-- raycast that first and reuse it for the on-court test later.
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = { myc, lastBall }
+	local standHit = Workspace:Raycast(hrp.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
+	local myFloor = standHit and standHit.Instance
+	local courtsF = courtsFolder()
+	local court
+	if myFloor and courtsF then
+		local a = myFloor
+		while a and a.Parent and a.Parent ~= courtsF do a = a.Parent end
+		if a and a.Parent == courtsF then court = a end
+	end
+	if not court then court = currentCourt(hrp.Position) end
+
+	-- Court parts we lean on:
+	--   2PT / Home2PT / Away2PT  -- marks the three-point distance.
+	--   Ground / Floor           -- the real playable rectangle (white lines).
+	--   Basket / Home/AwayBasket -- the hoop.
 	local twoPt, bounds, basket
 	if court then
 		local team = tostring(LocalPlayer:GetAttribute("Team") or "")
@@ -1470,14 +1486,8 @@ local function rageTeleport()
 		end
 	end
 
-	-- Every candidate is raycast straight down. No floor within a few studs of
-	-- our current height = off the court (or over a ledge), so it's discarded.
-	-- This is what stopped it dumping you out of bounds: the old version scored
-	-- purely on distance-from-defender and happily picked a spot in the sea.
-	local rp = RaycastParams.new()
-	rp.FilterType = Enum.RaycastFilterType.Exclude
-	rp.FilterDescendantsInstances = { myc, lastBall }
-
+	-- Every candidate is raycast straight down (reusing rp from above). No floor
+	-- within a few studs of our height = off the court, so it's discarded.
 	local flat = Vector3.new(1, 0, 1)
 	local best, bestScore, bestOnCourt = nil, -math.huge, false
 	-- why did every candidate get thrown out? counts turn "3PT just doesn't do
@@ -1500,8 +1510,7 @@ local function rageTeleport()
 	local intoCourt = (centre - hoop) * flat
 	intoCourt = intoCourt.Magnitude > 0.1 and intoCourt.Unit or Vector3.zero
 	local MIN_DEPTH = 6
-	local myFloorHit = Workspace:Raycast(hrp.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
-	local myFloor = myFloorHit and myFloorHit.Instance
+	-- myFloor was found above (the part under our feet = the court floor)
 	-- 3-point DISTANCE: how far from the hoop the twos end. Even though 2PT is a
 	-- vertical mesh, its extent toward court centre marks the arc, so a candidate
 	-- must be at least that deep to score a three. Falls back to MIN_DEPTH (no
@@ -1649,22 +1658,26 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 				end
 
 				if y > peak then peak = y end
-				-- Let the bar climb on its OWN to its crest, then FREEZE it there.
-				-- It rises to the top then falls; we detect the turnover (the first
-				-- frame it stops rising) and hold at that peak. Because we never write
-				-- a value ABOVE where the bar already climbed, there is no jump to the
-				-- top: you watch it climb, then it locks. This replaces the override
-				-- tween, which yanked the bar to full and read as a teleport.
-				if not locked and peak >= 0.5 and y <= peak - 0.01 then
+				-- HOLD AT THE RUNNING MAX. Once the bar has climbed past halfway we
+				-- clamp it to the highest value it has reached, every frame. While it
+				-- is still rising this does nothing (peak == y); the instant the game
+				-- pulls it back down we hold it at the crest. No dip-then-snap (we
+				-- catch the fall within 0.002, not after a 0.01 turnover) and no jump
+				-- (we never write above the natural peak) -- it climbs, then stops at
+				-- the top. That late 0.01 turnover was the "glitches back up" you saw.
+				if peak >= 0.5 then
 					locked = true
-					lockAt = peak
-				end
-				-- while locked, hold at the crest (green) or a shade under it (great:
-				-- accuracy < 100 shades the hold down so it scores a great)
-				if locked then
-					local hold = green and lockAt or (lockAt * target)
-					if math.abs(bar.Size.Y.Scale - hold) > 0.004 then
-						bar.Size = UDim2.new(1, 0, hold, 0)
+					if green then
+						-- can't exceed peak, so this only ever catches the fall
+						if bar.Size.Y.Scale < peak - 0.002 then
+							bar.Size = UDim2.new(1, 0, peak, 0)
+						end
+					else
+						-- great: freeze at the sub-green target once we climb into it
+						if lockAt == 0 and y >= target then lockAt = target end
+						if lockAt > 0 and math.abs(bar.Size.Y.Scale - lockAt) > 0.004 then
+							bar.Size = UDim2.new(1, 0, lockAt, 0)
+						end
 					end
 				end
 				if locked and not sounded then
