@@ -3358,11 +3358,46 @@ local function courtQueueSpots(c)
 	return {}
 end
 
+-- HORIZONTAL distance only: a player standing on a pad has their torso ~3 studs
+-- ABOVE the pad part, so 3D distance was overshooting 4 and missing the waiter,
+-- which is why it read both pads empty and always defaulted to red (spots[1]).
 local function spotOccupied(pos)
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character then
 			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - pos).Magnitude < 4 then return true end
+			if hrp then
+				local dx, dz = hrp.Position.X - pos.X, hrp.Position.Z - pos.Z
+				if dx * dx + dz * dz <= 25 then return true end   -- within 5 studs flat
+			end
+		end
+	end
+	return false
+end
+
+-- Is a MATCH running on court `c`? A live game puts both players on the court
+-- FLOOR (the queue pads read empty during play, which is how a busy court fooled
+-- the camp logic into walking onto it). Count opponents standing on the Ground
+-- surface; any at all = don't touch this court.
+local function courtFloorBox(c)
+	local g = c:FindFirstChild("Ground") or c:FindFirstChild("Floor")
+	if not g then return nil end
+	if g:IsA("BasePart") then return g.CFrame, g.Size end
+	local ok, cf, sz = pcall(function() return g:GetBoundingBox() end)
+	if ok then return cf, sz end
+	return nil
+end
+local function courtBusy(c)
+	local cf, size = courtFloorBox(c)
+	if not cf then return false end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local rel = cf:PointToObjectSpace(hrp.Position)
+				if math.abs(rel.X) <= size.X / 2 and math.abs(rel.Z) <= size.Z / 2 and math.abs(rel.Y) < 8 then
+					return true
+				end
+			end
 		end
 	end
 	return false
@@ -3451,7 +3486,8 @@ end
 
 -- Pick a court to head to: PREFER one with a waiter already on a pad (match
 -- starts the moment we take the other side), otherwise the nearest fully-empty
--- station to camp. Skip stations where both sides are taken.
+-- station to camp. Skip courts that are mid-match (players on the floor) and
+-- stations where both sides are already taken.
 local function farmFindCourt()
 	local courts = courtsFolder()
 	local myc = getChar()
@@ -3460,7 +3496,7 @@ local function farmFindCourt()
 	local join, camp, jD, cD = nil, nil, math.huge, math.huge
 	for _, c in ipairs(courts:GetChildren()) do
 		local spots = courtQueueSpots(c)
-		if #spots >= 2 then
+		if #spots >= 2 and not courtBusy(c) then          -- never walk onto an active game
 			local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
 			local d = math.min((spots[1] - from).Magnitude, (spots[2] - from).Magnitude)
 			if d <= F.Farm.reach then
@@ -3522,8 +3558,10 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		if farmCourt then farmSetState("queue") else return end   -- no station free; rescan next tick
 	end
 	if F.Farm.state == "queue" then
+		-- bail if the court started a match or filled up while we were heading over
+		if not farmCourt or courtBusy(farmCourt) then farmSetState("seek"); farmCourt = nil; return end
 		-- recompute the target pad each tick (the open side, or a spot to camp)
-		local spot = farmCourt and queueTargetSpot(farmCourt)
+		local spot = queueTargetSpot(farmCourt)
 		if not spot then farmSetState("seek"); return end   -- both sides filled: look elsewhere
 		farmWalkTo(spot, 3)   -- stand on the pad; both sides taken -> game starts in 5s
 	end
