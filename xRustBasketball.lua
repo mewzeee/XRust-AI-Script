@@ -3292,19 +3292,36 @@ end
 -- pad, sidewalk or grass). This is how we tell "in a match on the court" from
 -- "standing in the lobby / on a queue pad" -- the whole reason it was guarding
 -- people while not playing.
-local COURT_FLOOR = { Ground = true, Ground2 = true, Floor = true, Perimeter = true }
+-- Which court (a direct child of Workspace.Game.Courts) does `inst` belong to?
+local function courtOf(inst)
+	local courtsF = courtsFolder()
+	if not (inst and courtsF) then return nil end
+	local a = inst
+	while a and a ~= courtsF do
+		if a.Parent == courtsF then return a end
+		a = a.Parent
+	end
+	return nil
+end
 local function floorUnderMe()
 	local myc = getChar()
 	if not myc then return nil end
 	local rp = RaycastParams.new()
 	rp.FilterType = Enum.RaycastFilterType.Exclude
 	rp.FilterDescendantsInstances = { myc }
-	local hit = Workspace:Raycast(myc.HumanoidRootPart.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
+	local hit = Workspace:Raycast(myc.HumanoidRootPart.Position + Vector3.new(0, 5, 0), Vector3.new(0, -20, 0), rp)
 	return hit and hit.Instance or nil
+end
+-- The queue side of a court (pads / platform / sidewalk / grass) -- NOT the
+-- playing surface. Name-based so it works on every map whatever the floor part
+-- is called; only these edge parts are excluded.
+local function isQueueOrEdge(name)
+	return name == "Sidewalk" or name:find("Queue") or name:find("Pad")
+		or name:find("Home") or name:find("Away") or name:find("Surface")
 end
 local function amOnCourtFloor()
 	local f = floorUnderMe()
-	return f ~= nil and COURT_FLOOR[f.Name] == true
+	return f ~= nil and courtOf(f) ~= nil and not isQueueOrEdge(f.Name)
 end
 
 -- an opponent standing on court `c` who actually HOLDS a basketball (nil if none)
@@ -3410,10 +3427,8 @@ local function queueTargetSpot(c)
 	local spots = courtQueueSpots(c)
 	if #spots < 2 then return nil end
 	local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
-	if o1 and o2 then return nil end
-	if o1 then return spots[2] end
-	if o2 then return spots[1] end
-	return spots[1]   -- both empty: camp one side and wait for someone
+	if o1 == o2 then return nil end   -- both taken OR both empty (waiter left): re-seek
+	return o1 and spots[2] or spots[1]   -- take the OPEN side
 end
 
 -- walk toward a world position with the Humanoid; true once within tol
@@ -3473,40 +3488,41 @@ local function farmShoot()
 	end
 end
 
--- Am I in a live match? I must be standing ON the court PLAYING surface (not a
--- pad or the lobby) with an opponent also on the court. Keying off shootingBar()
--- was the bug: that UI exists in the lobby too, so it "played" everywhere and
--- guarded people who weren't in a game.
+-- Am I in a live match? I'm playing iff I'm standing on a court PLAYING surface.
+-- The court comes straight from the floor part under me (exact), not currentCourt
+-- (which leans on a stale Court attribute). The old version ALSO required an
+-- opponent in the court box -- that flickered false whenever they stepped out of
+-- it for a moment, dropping us out of "play" so the queue logic teleported us off
+-- the court to a random pad. That was the "teleports to pads while in a game" bug.
 local function farmInMatch()
-	if not amOnCourtFloor() then return false end
-	local myc = getChar()
-	local court = currentCourt(myc.HumanoidRootPart.Position)
-	return #playersOnCourt(court) >= 1, court
+	local f = floorUnderMe()
+	if not f then return false end
+	local court = courtOf(f)
+	if not court or isQueueOrEdge(f.Name) then return false end
+	return true, court
 end
 
--- Pick a court to head to: PREFER one with a waiter already on a pad (match
--- starts the moment we take the other side), otherwise the nearest fully-empty
--- station to camp. Skip courts that are mid-match (players on the floor) and
--- stations where both sides are already taken.
+-- Pick the nearest court where exactly ONE side is taken -- someone is genuinely
+-- WAITING for a 1v1, so taking the open side starts the match. We no longer camp
+-- empty stations (that teleported you to random empty courts across the map with
+-- nobody to play). Skip courts mid-match and stations with both sides taken.
 local function farmFindCourt()
 	local courts = courtsFolder()
 	local myc = getChar()
 	if not (courts and myc) then return nil end
 	local from = myc.HumanoidRootPart.Position
-	local join, camp, jD, cD = nil, nil, math.huge, math.huge
+	local best, bD = nil, math.huge
 	for _, c in ipairs(courts:GetChildren()) do
 		local spots = courtQueueSpots(c)
 		if #spots >= 2 and not courtBusy(c) then          -- never walk onto an active game
 			local o1, o2 = spotOccupied(spots[1]), spotOccupied(spots[2])
-			local d = math.min((spots[1] - from).Magnitude, (spots[2] - from).Magnitude)
-			if d <= F.Farm.reach then
-				if (o1 ~= o2) and d < jD then join, jD = c, d          -- one waiter: join now
-				elseif (not o1 and not o2) and d < cD then camp, cD = c, d  -- empty: camp
-				end
+			if o1 ~= o2 then                              -- exactly one waiter = joinable
+				local d = math.min((spots[1] - from).Magnitude, (spots[2] - from).Magnitude)
+				if d <= F.Farm.reach and d < bD then best, bD = c, d end
 			end
 		end
 	end
-	return join or camp
+	return best
 end
 
 local farmCourt = nil
@@ -3520,20 +3536,21 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		farmSetState("play")
 		-- possession decides the behaviour, toggling the tuned guard/rebound loops
 		if ballHeld() then
+			-- I have it: shoot (rage green rides along via the shoot key)
 			F.Guard.enabled, F.Reb.enabled = false, false
 			farmShoot()
 		elseif looseBallOnCourt(court) then
-			F.Reb.mode = "Teleport"                        -- snap to the loose ball
+			-- loose on the court: snap to it. Teleport mode + no cooldown so it's
+			-- instant (the 0.4s rebound cooldown was why it lost 50/50 balls).
+			F.Reb.mode = "Teleport"
 			F.Reb.enabled, F.Guard.enabled = true, false
-		elseif opponentHasBall(court) then
-			-- Teleport-guard the carrier: the game overrides Humanoid movement in a
-			-- match, so Legs (walking) does nothing -- CFrame guarding sticks. The
-			-- carrier is the only other player on the court, so nearest = them (no
-			-- need to force ballOnly, which was clobbering the manual guard toggle).
+		else
+			-- I don't have it and it's not loose -> the opponent has it: GUARD.
+			-- Keying off opponentHasBall made guard flicker off whenever their ball
+			-- Tool re-parented mid-dribble (that's the "guard stops locking on").
+			-- Teleport mode because the game overrides Humanoid walking in a match.
 			F.Guard.mode = "Teleport"
 			F.Guard.enabled, F.Reb.enabled = true, false
-		else
-			F.Guard.enabled, F.Reb.enabled = false, false  -- dead ball between plays: wait
 		end
 		return
 	end
@@ -3571,7 +3588,12 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 	F.Farm.enabled = on
 	if on then
 		F.Green.enabled = true                 -- so the shot key drives rage + green
+		F.Green.rage = true                    -- shoot uncontested (rage), so greens land
 		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
+		F.Reb.cooldown = 0.05                  -- near-instant rebound snap (was 0.4)
+		F.Reb.range = 200                      -- grab the ball from anywhere on court
+		F.Reb.height = 2                       -- land ON the ball, not below it
+		F.Guard.maxRange = 80                  -- court-sized: locks the opponent, not players on other courts
 		farmSetState("seek")
 		Library:Notify("Auto Farm", "Farming. Only acts while on a court in a live match -- watch the console.", 6, "good")
 	else
