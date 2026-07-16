@@ -1471,7 +1471,26 @@ local function rageTeleport()
 	local best, bestScore = nil, -math.huge
 	-- why did every candidate get thrown out? counts turn "3PT just doesn't do
 	-- anything" into a specific gate we can point at and fix
-	local rej = { bounds = 0, three = 0, nofloor = 0, farfloor = 0, ok = 0 }
+	local rej = { behind = 0, bounds = 0, three = 0, nofloor = 0, farfloor = 0, offcourt = 0, ok = 0 }
+	-- WHITE-LINE BOUNDS. The Bounds box is bigger than the painted court, so a
+	-- full ring around the hoop includes spots behind the backboard and past the
+	-- sidelines -- the reported "slightly out, behind the hoop". Two geometric
+	-- gates fix that without knowing the exact court size:
+	--   intoCourt = direction from the hoop toward court centre. A spot with
+	--     little depth along it is on/behind the baseline, so reject it.
+	--   myFloor = the part you are standing on IS the court surface; beyond the
+	--     white lines is a different part, so reject any spot not over it.
+	local centre = hoop
+	if bCf then centre = bCf.Position
+	elseif court then
+		local okp, piv = pcall(function() return court:GetPivot().Position end)
+		if okp then centre = piv end
+	end
+	local intoCourt = (centre - hoop) * flat
+	intoCourt = intoCourt.Magnitude > 0.1 and intoCourt.Unit or Vector3.zero
+	local MIN_DEPTH = 6
+	local myFloorHit = Workspace:Raycast(hrp.Position + Vector3.new(0, 3, 0), Vector3.new(0, -14, 0), rp)
+	local myFloor = myFloorHit and myFloorHit.Instance
 	-- sweep several rings out from the hoop; the first that satisfies
 	-- in-bounds AND outside-2PT AND has floor under it wins
 	for ring = 0, 5 do
@@ -1481,14 +1500,19 @@ local function rageTeleport()
 			local spot = hoop + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 			spot = Vector3.new(spot.X, hrp.Position.Y, spot.Z)
 
+			-- how far into the court this spot is from the baseline; behind the
+			-- hoop is negative and gets thrown out before anything else
+			local depth = intoCourt.Magnitude > 0.5 and ((spot - hoop) * flat):Dot(intoCourt) or MIN_DEPTH
 			-- inside the court, outside the two-point zone
 			local okBounds = (not bCf) or inBox(spot, bCf, bSize, -3)
 			local okThree  = (not tCf) or (not inBox(spot, tCf, tSize, 1))
-			if not okBounds then rej.bounds = rej.bounds + 1
+			if depth < MIN_DEPTH then rej.behind = rej.behind + 1
+			elseif not okBounds then rej.bounds = rej.bounds + 1
 			elseif not okThree then rej.three = rej.three + 1
 			else
 				local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
 				if not hit then rej.nofloor = rej.nofloor + 1
+				elseif myFloor and hit.Instance ~= myFloor then rej.offcourt = rej.offcourt + 1
 				else
 					-- floor must be near our own height: rules out rooftops and pits
 					local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
@@ -1512,9 +1536,9 @@ local function rageTeleport()
 	if not best then
 		-- name the gate that killed every candidate instead of silently
 		-- returning false, which read to you as "3PT does nothing"
-		warn(("[XRust] 3PT: no spot. court=%s hasBounds=%s has2PT=%s | rejected bounds=%d three=%d nofloor=%d farfloor=%d ok=%d")
+		warn(("[XRust] 3PT: no spot. court=%s hasBounds=%s has2PT=%s | rejected behind=%d bounds=%d three=%d nofloor=%d offcourt=%d farfloor=%d ok=%d")
 			:format(tostring(court and court.Name), tostring(bCf ~= nil), tostring(tCf ~= nil),
-				rej.bounds, rej.three, rej.nofloor, rej.farfloor, rej.ok))
+				rej.behind, rej.bounds, rej.three, rej.nofloor, rej.offcourt, rej.farfloor, rej.ok))
 		-- nowhere legal on this court — do nothing rather than teleport you
 		-- out of bounds, which is what the old radius-only version did
 		return false
@@ -1581,7 +1605,7 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 		local green = (F.Green.accuracy >= 100) or (math.random(1, 100) <= F.Green.accuracy)
 		local target = green and 1 or (0.88 + math.random() * 0.06)
 
-		local raged, locked = false, false
+		local raged, locked, peak = false, false, 0
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
 			if bar then
@@ -1606,7 +1630,13 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 				-- the game animates the same property, so the two fought, and
 				-- reading it back fed our own output into the next target.
 				-- TweenSize with override=true beats the game's tween cleanly.
-				if not locked and y >= target - 0.02 then
+				if y > peak then peak = y end
+					-- The meter SWEEPS up then back down (confirmed). Lock at the
+					-- crest: either the frame we reach the top, OR the moment it
+					-- turns over from a high peak (the last chance to pin the top
+					-- before it drops). Snapping to target from just under the crest
+					-- still lands a green, which is the whole point.
+				if not locked and (y >= target - 0.02 or (peak >= 0.80 and y <= peak - 0.015)) then
 					locked = true
 					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out,
 						Enum.EasingStyle.Quad, F.Green.speed, true)
