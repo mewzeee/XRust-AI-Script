@@ -3382,17 +3382,27 @@ local function queueTargetSpot(c)
 end
 
 -- walk toward a world position with the Humanoid; true once within tol
+-- Glide to a spot via CFrame. Humanoid:Move does NOT work here: Roblox's default
+-- control script calls Move(zero) every frame when no key is pressed, so it
+-- cancels our walk instantly -- that's why the bot never left for the pad (and
+-- why guard/rebound need Teleport mode). CFrame writes win, so we step toward the
+-- target each frame: quick, and not fought by the control script.
 local function farmWalkTo(pos, tol)
 	local myc = getChar()
 	if not (myc and pos) then return false end
 	local hrp = myc.HumanoidRootPart
-	local hum = myc:FindFirstChildOfClass("Humanoid")
-	local flat = Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)
-	if flat.Magnitude <= (tol or 6) then
-		if hum then hum:Move(Vector3.zero, false) end
+	-- stand ON the pad: aim ~3 studs above it (HRP height) rather than at its face
+	local target = Vector3.new(pos.X, pos.Y + 3, pos.Z)
+	local delta = target - hrp.Position
+	if delta.Magnitude <= (tol or 3) then
+		hrp.AssemblyLinearVelocity = Vector3.zero
 		return true
 	end
-	if hum then hum:Move(flat.Unit, false) end
+	local step = math.min(delta.Magnitude, 4)          -- studs/frame
+	local nextPos = hrp.Position + delta.Unit * step
+	local face = Vector3.new(target.X, nextPos.Y, target.Z)
+	hrp.CFrame = (face - nextPos).Magnitude > 0.1 and CFrame.new(nextPos, face) or CFrame.new(nextPos)
+	hrp.AssemblyLinearVelocity = Vector3.zero
 	return false
 end
 
