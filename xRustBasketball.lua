@@ -1334,7 +1334,7 @@ local greenP2 = greenPage:AddPanel("Rage")
 --    90  -> 90% of shots green, the rest fall just short (a "great")
 -- Nothing else to tune.
 F.Green = { enabled = false, accuracy = 100, key = Enum.KeyCode.E, requireBall = true,
-	speed = 0.12, sound = false,
+	speed = 0.12, sound = false, log = false,
 	rage = false, rageMode = "Drop", rageDepth = 3, rageHold = 0.6, rageRadius = 30 }
 
 local function shootingBar()
@@ -1377,6 +1377,10 @@ greenP2:AddSlider({ Text = "Rage Hold", Flag = "green_hold", Min = 0.2, Max = 2,
 	Suffix = "s", Callback = function(v) F.Green.rageHold = v end })
 greenP2:AddSlider({ Text = "3PT Radius", Flag = "green_radius", Min = 12, Max = 60, Default = 30,
 	Suffix = "m", Callback = function(v) F.Green.rageRadius = v end })
+-- Diagnostic: turn Auto Green OFF, enable this, hold the shoot key and let go.
+-- Prints the RAW meter curve so the lock can be tuned to what the bar actually
+-- does. With Auto Green on, this logs the pinned curve instead of the natural one.
+greenP2:AddToggle({ Text = "Log Meter Curve", Flag = "green_log", Callback = function(on) F.Green.log = on end })
 
 local function greenKeyDown()
 	local k = F.Green.key
@@ -1465,6 +1469,9 @@ local function rageTeleport()
 
 	local flat = Vector3.new(1, 0, 1)
 	local best, bestScore = nil, -math.huge
+	-- why did every candidate get thrown out? counts turn "3PT just doesn't do
+	-- anything" into a specific gate we can point at and fix
+	local rej = { bounds = 0, three = 0, nofloor = 0, farfloor = 0, ok = 0 }
 	-- sweep several rings out from the hoop; the first that satisfies
 	-- in-bounds AND outside-2PT AND has floor under it wins
 	for ring = 0, 5 do
@@ -1477,12 +1484,17 @@ local function rageTeleport()
 			-- inside the court, outside the two-point zone
 			local okBounds = (not bCf) or inBox(spot, bCf, bSize, -3)
 			local okThree  = (not tCf) or (not inBox(spot, tCf, tSize, 1))
-			if okBounds and okThree then
+			if not okBounds then rej.bounds = rej.bounds + 1
+			elseif not okThree then rej.three = rej.three + 1
+			else
 				local hit = Workspace:Raycast(spot + Vector3.new(0, 6, 0), Vector3.new(0, -24, 0), rp)
-				if hit then
+				if not hit then rej.nofloor = rej.nofloor + 1
+				else
 					-- floor must be near our own height: rules out rooftops and pits
 					local drop = math.abs(hit.Position.Y - (hrp.Position.Y - 3))
-					if drop <= 6 then
+					if drop > 6 then rej.farfloor = rej.farfloor + 1
+					else
+						rej.ok = rej.ok + 1
 						local landed = Vector3.new(spot.X, hit.Position.Y + 3, spot.Z)
 						local score
 						if defender then
@@ -1498,11 +1510,18 @@ local function rageTeleport()
 		if best then break end   -- nearest valid ring is enough
 	end
 	if not best then
+		-- name the gate that killed every candidate instead of silently
+		-- returning false, which read to you as "3PT does nothing"
+		warn(("[XRust] 3PT: no spot. court=%s hasBounds=%s has2PT=%s | rejected bounds=%d three=%d nofloor=%d farfloor=%d ok=%d")
+			:format(tostring(court and court.Name), tostring(bCf ~= nil), tostring(tCf ~= nil),
+				rej.bounds, rej.three, rej.nofloor, rej.farfloor, rej.ok))
 		-- nowhere legal on this court — do nothing rather than teleport you
 		-- out of bounds, which is what the old radius-only version did
 		return false
 	end
 
+	warn(("[XRust] 3PT: moved to %s (court=%s, %d valid spots, radius=%d)"):format(
+		tostring(best), tostring(court and court.Name), rej.ok, F.Green.rageRadius))
 	hrp.CFrame = CFrame.new(best, Vector3.new(hoop.X, best.Y, hoop.Z))
 	hrp.AssemblyLinearVelocity = Vector3.zero
 
@@ -1562,7 +1581,7 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 		local green = (F.Green.accuracy >= 100) or (math.random(1, 100) <= F.Green.accuracy)
 		local target = green and 1 or (0.88 + math.random() * 0.06)
 
-		local raged, fired = false, false
+		local raged, locked = false, false
 		while F.Green.enabled and greenKeyDown() and not Library.Destroyed do
 			local bar = shootingBar()
 			if bar then
@@ -1587,8 +1606,8 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 				-- the game animates the same property, so the two fought, and
 				-- reading it back fed our own output into the next target.
 				-- TweenSize with override=true beats the game's tween cleanly.
-				if not fired and y >= 0.75 then
-					fired = true
+				if not locked and y >= target - 0.02 then
+					locked = true
 					bar:TweenSize(UDim2.new(1, 0, target, 0), Enum.EasingDirection.Out,
 						Enum.EasingStyle.Quad, F.Green.speed, true)
 					-- hold it there for as long as the key is down, in case the
@@ -1596,7 +1615,10 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 					task.spawn(function()
 						local deadline = os.clock() + 1.5
 						while greenKeyDown() and os.clock() < deadline and not Library.Destroyed do
-							if bar and bar.Parent and bar.Size.Y.Scale > target then
+							-- correct DRIFT in BOTH directions: if the game pushes the
+							-- bar off target after our tween (up OR down), snap it back
+							-- so a held lock genuinely stays put at the top
+							if bar and bar.Parent and math.abs(bar.Size.Y.Scale - target) > 0.004 then
 								bar.Size = UDim2.new(1, 0, target, 0)
 							end
 							task.wait()
@@ -1612,6 +1634,34 @@ Library:Connect(UserInputService.InputBegan, function(input, gpe)
 			task.wait()
 		end
 		greenBusy = false
+	end)
+end)
+
+-- Meter curve logger. Independent of the auto-green loop so it works whether or
+-- not that fires. Samples the raw bar height each frame while the shoot key is
+-- held and prints the curve on release: peak, sample count, and t:y pairs. This
+-- is the readout that answers "does the bar rise-and-hold, sweep, or overshoot"
+-- without us guessing. Turn Auto Green OFF to capture the natural curve.
+Library:Connect(UserInputService.InputBegan, function(input, gpe)
+	if gpe or not F.Green.log or Library.Destroyed then return end
+	local k = F.Green.key
+	local match = (typeof(k) == "EnumItem" and k.EnumType == Enum.UserInputType)
+		and (input.UserInputType == k) or (input.KeyCode == k)
+	if not match then return end
+	task.spawn(function()
+		local samples, t0, peak = {}, os.clock(), 0
+		while greenKeyDown() and not Library.Destroyed and (os.clock() - t0) < 5 do
+			local bar = shootingBar()
+			if bar then
+				local y = bar.Size.Y.Scale
+				if y > peak then peak = y end
+				table.insert(samples, ("%.2f:%.3f"):format(os.clock() - t0, y))
+			end
+			task.wait()
+		end
+		warn(("[XRust] meter: %d samples, peak=%.3f over %.2fs"):format(
+			#samples, peak, os.clock() - t0))
+		warn("[XRust] meter curve (t:y)  " .. table.concat(samples, "  "))
 	end)
 end)
 
