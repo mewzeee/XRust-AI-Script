@@ -3355,23 +3355,34 @@ end
 -- Pad is one long strip and the players stand at its two ENDS -- the middle is
 -- the scoreboard, which is where "walk to the pad" wrongly aimed (it looked like
 -- following the other player instead of taking the open side).
-local function padPart(m)
-	if not m then return nil end
-	if m:IsA("BasePart") then return m end
-	return m:FindFirstChildWhichIsA("BasePart", true)
+-- Every standing pad on a court's queue station, split by side. A 1v1 has ONE
+-- Home pad and ONE Away pad; a 2v2 has TWO of each (Home1/Home2/Away1/Away2) --
+-- that's the station the farm kept walking onto. Counting them is how we tell.
+local function courtPads(c)
+	local q = c and c:FindFirstChild("Queue")
+	local home, away = {}, {}
+	if q then
+		for _, d in ipairs(q:GetDescendants()) do
+			if d:IsA("BasePart") then
+				if d.Name:match("^Home%d*$") then table.insert(home, d)
+				elseif d.Name:match("^Away%d*$") then table.insert(away, d) end
+			end
+		end
+	end
+	return home, away
 end
 
--- The two standing pads are Queue.Home and Queue.Away (the neon squares).
--- Confirmed from the dump: the part under you on a pad is Court.Queue.Home.Home1.
--- Falls back to the two ends of the Pad strip if Home/Away aren't there.
+-- The two standing spots of a 1v1 court (Home / Away). Returns {} for anything
+-- that is NOT a 1v1 (2v2 = two pads per side), so the farm skips those entirely.
 local function courtQueueSpots(c)
 	if not c then return {} end
-	local q = c:FindFirstChild("Queue")
-	if q then
-		local home = padPart(q:FindFirstChild("Home"))
-		local away = padPart(q:FindFirstChild("Away"))
-		if home and away then return { home.Position, away.Position } end
+	local home, away = courtPads(c)
+	if #home > 0 or #away > 0 then
+		-- named pads exist -> it's a 1v1 only when there's exactly one per side
+		if #home == 1 and #away == 1 then return { home[1].Position, away[1].Position } end
+		return {}   -- 2v2 (or odd layout): not a 1v1, skip it
 	end
+	-- fallback for courts with no Home/Away pads: the two ends of the Pad strip
 	local pad = c:FindFirstChild("Pad")
 	if pad then
 		local ok, cf, size = pcall(function() return pad:GetBoundingBox() end)
