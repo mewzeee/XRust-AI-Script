@@ -3669,6 +3669,9 @@ local function farmShoot(court, opp)
 			end
 		end)
 		task.wait(0.05)
+		-- don't chase our own shot: block the rebound grab briefly so it doesn't
+		-- teleport onto the ball while it's still flying to the hoop
+		F.Farm._noGrabUntil = os.clock() + 0.7
 		F.Farm._shooting = false
 	end)
 end
@@ -3715,6 +3718,24 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 	if not F.Farm.enabled or Library.Destroyed then return end
 	if not getChar() then return end
 
+	-- RECOVERY NET: if some teleport (or a fall) put us far off the court we were
+	-- playing on, snap back to its centre instead of being stuck off the map.
+	-- Only fires on the extreme case, so it won't fight the legit end-of-match
+	-- teleport to a pad (~50 studs). This is the "teleports me out" safety.
+	if F.Farm.state == "play" and F.Farm._playCourt then
+		local fCf, fSize = courtFloorBox(F.Farm._playCourt)
+		local myc0 = getChar()
+		if fCf and fSize and myc0 then
+			local rel = fCf:PointToObjectSpace(myc0.HumanoidRootPart.Position)
+			if math.abs(rel.X) > fSize.X / 2 + 120 or math.abs(rel.Z) > fSize.Z / 2 + 120
+				or rel.Y < -50 or rel.Y > 120 then
+				farmLog(("recovered off-map (rel %.0f,%.0f,%.0f) -> court centre"):format(rel.X, rel.Y, rel.Z))
+				myc0.HumanoidRootPart.CFrame = CFrame.new(fCf.Position + Vector3.new(0, 4, 0))
+				myc0.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+			end
+		end
+	end
+
 	local inMatch, court = farmInMatch()
 	if inMatch then
 		F.Farm.lastInMatch = os.clock()
@@ -3733,10 +3754,13 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			F.Guard.enabled = false
 			farmShoot(court, opp)
 		elseif loose then
-			-- a ball is loose on my court -> teleport onto it (skip while my own
-			-- shot sequence is still running so it doesn't chase its own shot)
+			-- a ball is loose on my court -> teleport onto it. Skip while my own
+			-- shot sequence runs AND for a moment after (so it doesn't chase its own
+			-- shot up into the air right after releasing).
 			F.Guard.enabled = false
-			if not F.Farm._shooting then farmGrabBall(loose) end
+			if not F.Farm._shooting and os.clock() >= (F.Farm._noGrabUntil or 0) then
+				farmGrabBall(loose)
+			end
 		else
 			-- the opponent has it: guard CLOSE and spam R to steal. 0.4s grace so a
 			-- ball-leave mid-dribble doesn't drop the lock; on a real dead ball we
