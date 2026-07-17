@@ -3164,11 +3164,15 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 			end
 		end
 	else
-		local goal = F.Guard.faceTarget and CFrame.new(goalPos, tHrp.Position + lead) or CFrame.new(goalPos)
-		if F.Guard.smooth <= 0 then
-			hrp.CFrame = goal
-		else
-			hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+		-- sanity: if the target's position momentarily reads far away (a respawn
+		-- at a spawn point, etc.) don't fling ourselves across the map to it
+		if (goalPos - hrp.Position).Magnitude <= 200 then
+			local goal = F.Guard.faceTarget and CFrame.new(goalPos, tHrp.Position + lead) or CFrame.new(goalPos)
+			if F.Guard.smooth <= 0 then
+				hrp.CFrame = goal
+			else
+				hrp.CFrame = hrp.CFrame:Lerp(goal, math.clamp(dt * (21 - F.Guard.smooth), 0, 1))
+			end
 		end
 	end
 end)
@@ -3517,19 +3521,22 @@ local function courtHoop(court)
 	return myc and nearestHoop(myc.HumanoidRootPart.Position) or nil
 end
 
--- The live loose ball: a direct child of Workspace named Basketball/Ball (a shot
--- or dropped ball becomes one). NOT the held ball (nested in a character) and NOT
--- a rack spare. This scans directly instead of findBall(), which CACHES the last
--- ball and returns your HELD one first -- that's the core reason rebound never
--- fired. Constrained to my court so it won't chase one 500 studs away.
+-- The live loose ball to rebound: a direct child of Workspace named Basketball/
+-- Ball. Scans directly (findBall() caches the last ball and returns your HELD one
+-- first -- why rebound never fired). STRICTLY gated to avoid the out-of-map
+-- teleports: it must be inside MY court's FLOOR footprint AND near floor level.
+-- A ball that's arcing high on a shot, or reset to a far spawn point, is skipped
+-- -- chasing those is what flung the character off the map.
 local function farmLooseBall(court)
+	if not court then return nil end
+	local fCf, fSize = courtFloorBox(court)
+	if not (fCf and fSize) then return nil end
 	for _, d in ipairs(Workspace:GetChildren()) do
 		if isBall(d) and not isRacked(d) then
-			if not court then return d end
-			local ok, ccf, csize = pcall(function() return court:GetBoundingBox() end)
-			if not ok then return d end
-			local rel = ccf:PointToObjectSpace(d.Position)
-			if math.abs(rel.X) <= csize.X / 2 + 12 and math.abs(rel.Z) <= csize.Z / 2 + 12 then
+			local rel = fCf:PointToObjectSpace(d.Position)
+			if math.abs(rel.X) <= fSize.X / 2 + 6
+				and math.abs(rel.Z) <= fSize.Z / 2 + 6
+				and rel.Y >= -4 and rel.Y <= 9 then   -- low: on the ground, not mid-flight
 				return d
 			end
 		end
@@ -3538,11 +3545,13 @@ local function farmLooseBall(court)
 end
 
 -- teleport ONTO the loose ball (overlap it so the touch-pickup fires), facing
--- the hoop so we're ready to shoot the instant we grab it
+-- the hoop. Hard sanity cap: never fling more than 60 studs for a ball -- if the
+-- target is farther than that, something is wrong and we do NOT teleport.
 local function farmGrabBall(ball)
 	local myc = getChar()
 	if not (myc and ball) then return end
 	local hrp = myc.HumanoidRootPart
+	if (ball.Position - hrp.Position).Magnitude > 60 then return end
 	local hoop = nearestHoop(ball.Position)
 	local look = hoop and Vector3.new(hoop.X, ball.Position.Y, hoop.Z) or (ball.Position + hrp.CFrame.LookVector)
 	hrp.CFrame = CFrame.new(ball.Position, look)
