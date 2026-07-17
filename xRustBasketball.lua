@@ -3498,16 +3498,73 @@ local function farmOpponent(court)
 	return best
 end
 
--- teleport straight onto the loose ball to grab it (the rebound loop kept losing
--- the 50/50; a direct spam-teleport wins it)
-local function farmGrabBall()
+-- the hoop position for this court
+local function courtHoop(court)
+	local b = court and court:FindFirstChild("Basket")
+	if b then local ok, cf = pcall(function() return b:GetBoundingBox() end); if ok then return cf.Position end end
 	local myc = getChar()
-	if not myc then return end
+	return myc and nearestHoop(myc.HumanoidRootPart.Position) or nil
+end
+
+-- a LOOSE ball that is actually inside MY court (not a ball 500 studs away on
+-- another court -- that was the "teleported me to a ball 500m away" bug)
+local function farmLooseBall(court)
+	if not (court and ballIsLoose()) then return nil end   -- someone is holding it
 	local ball = findBall()
-	if not ball or isRacked(ball) then return end
+	if not ball or isRacked(ball) then return nil end
+	local ok, ccf, csize = pcall(function() return court:GetBoundingBox() end)
+	if not ok then return nil end
+	local rel = ccf:PointToObjectSpace(ball.Position)
+	if math.abs(rel.X) > csize.X / 2 + 5 or math.abs(rel.Z) > csize.Z / 2 + 5 then return nil end
+	return ball
+end
+
+-- teleport straight onto a specific loose ball to grab it (facing it)
+local function farmGrabBall(ball)
+	local myc = getChar()
+	if not (myc and ball) then return end
 	local hrp = myc.HumanoidRootPart
-	hrp.CFrame = CFrame.new(ball.Position + Vector3.new(0, 1, 0))
+	hrp.CFrame = CFrame.new(ball.Position + Vector3.new(0, 1, 0), ball.Position)
 	hrp.AssemblyLinearVelocity = Vector3.zero
+end
+
+-- Best spot to SHOOT from: inside the court (well within the white sidelines), a
+-- comfortable three past the arc/takeback line, and FURTHEST from the opponent.
+-- Grid-sampled so there are many candidates, not one fixed ring.
+local function farmShotSpot(court, opp)
+	local myc = getChar()
+	if not (court and myc) then return nil end
+	local fCf, fSize = courtFloorBox(court)
+	local hoop = courtHoop(court)
+	if not (fCf and fSize and hoop) then return nil end
+	local myY = myc.HumanoidRootPart.Position.Y
+	local hLocal = fCf:PointToObjectSpace(hoop)
+	local oppLocal
+	if opp and opp.Character then
+		local ohrp = opp.Character:FindFirstChild("HumanoidRootPart")
+		if ohrp then oppLocal = fCf:PointToObjectSpace(ohrp.Position) end
+	end
+	local inset = 6                                  -- stay inside the white lines
+	local halfX, halfZ = fSize.X / 2 - inset, fSize.Z / 2 - inset
+	local best, bestScore = nil, -math.huge
+	local gx = -halfX
+	while gx <= halfX do
+		local gz = -halfZ
+		while gz <= halfZ do
+			local dHoop = math.sqrt((gx - hLocal.X) ^ 2 + (gz - hLocal.Z) ^ 2)
+			if dHoop >= 28 and dHoop <= 36 then      -- comfortable 3: past the takeback line, not a deep heave
+				local score = oppLocal and math.sqrt((gx - oppLocal.X) ^ 2 + (gz - oppLocal.Z) ^ 2) or -dHoop
+				if score > bestScore then
+					bestScore = score
+					local w = fCf * CFrame.new(gx, 0, gz)
+					best = Vector3.new(w.X, myY, w.Z)
+				end
+			end
+			gz = gz + 4
+		end
+		gx = gx + 4
+	end
+	return best
 end
 
 -- spam the steal key (R) while guarding the ball carrier
@@ -3542,31 +3599,34 @@ local function farmLeaveCourt(court)
 	end
 end
 
--- shoot through the REAL green path: press the shoot key so the game's own shot
--- fires and the Auto Green handler (rage + green) rides along. Legit uses its
--- tuned hold; Blatant needs a longer hold so the meter loop can lock first.
-local function farmShoot()
+-- Shoot: teleport to a good IN-COURT three furthest from the opponent, pause so
+-- the take-back registers, face the hoop, then fire the legit macro.
+local function farmShoot(court, opp)
 	if F.Farm._shooting then return end   -- one shot sequence at a time
 	if os.clock() - F.Farm.lastShot < F.Farm.shootEvery then return end
 	if not VIM then return end
 	F.Farm.lastShot = os.clock()
 	F.Farm._shooting = true
 	task.spawn(function()
-		-- 1) TAKE BACK: rage-teleport out past the 3PT / takeback line, then WAIT
-		--    so the game registers us behind it. Shooting straight after a rebound
-		--    or steal without going back is a take-back violation -- the pause and
-		--    the deeper rage spot (bigger radius, set on enable) are what make it
-		--    count.
-		if F.Green.rage then
-			if F.Green.rageMode == "3PT Teleport" then
-				local ok, moved = pcall(rageTeleport)
-				if not ok or moved == false then pcall(rageDrop) end
-			else
-				pcall(rageDrop)
-			end
+		local myc = getChar()
+		local hoop = courtHoop(court)
+		local spot = myc and farmShotSpot(court, opp)
+		-- 1) TAKE BACK: teleport to the shot spot (inside the court, past the arc)
+		--    and WAIT so crossing behind the line registers. Shooting straight
+		--    after a rebound/steal without going back is a take-back violation.
+		if myc and spot then
+			local hrp = myc.HumanoidRootPart
+			local face = hoop and Vector3.new(hoop.X, spot.Y, hoop.Z) or (spot + hrp.CFrame.LookVector)
+			hrp.CFrame = CFrame.new(spot, face)
+			hrp.AssemblyLinearVelocity = Vector3.zero
 		end
 		task.wait(0.35)          -- let the takeback register
-		farmFaceHoop()
+		-- re-face the hoop right before releasing so the shot travels at it
+		if myc and myc.Parent and hoop then
+			local hrp = myc.HumanoidRootPart
+			hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(hoop.X, hrp.Position.Y, hoop.Z))
+			hrp.AssemblyLinearVelocity = Vector3.zero
+		end
 		-- 2) shoot: press the key, release after the tuned hold -- the legit macro.
 		--    _shooting makes our own InputBegan handler ignore this synthetic key.
 		local k = F.Green.key
@@ -3633,18 +3693,20 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		-- lock the guard to the opponent on THIS court (not a nearer player on
 		-- another court), and never chase a loose ball with the rebound loop --
 		-- the farm grabs it directly below.
-		F.Guard.forceTarget = farmOpponent(court)
+		local opp = farmOpponent(court)
+		F.Guard.forceTarget = opp
 		F.Reb.enabled = false
+		local loose = farmLooseBall(court)   -- a ball loose on MY court (not 500m away)
 
 		if ballHeld() then
-			-- I have it: shoot (take-back rage 3 + legit macro)
+			-- I have it: shoot from a good in-court three, furthest from the opponent
 			F.Guard.enabled = false
-			farmShoot()
-		elseif ballIsLoose() then
-			-- nobody is holding it -> spam-teleport onto it to grab (don't chase my
-			-- own shot while the shot sequence is still running)
+			farmShoot(court, opp)
+		elseif loose then
+			-- a ball is loose on my court -> teleport onto it (skip while my own
+			-- shot sequence is still running so it doesn't chase its own shot)
 			F.Guard.enabled = false
-			if not F.Farm._shooting then farmGrabBall() end
+			if not F.Farm._shooting then farmGrabBall(loose) end
 		else
 			-- the opponent has it: guard CLOSE and spam R to steal. 0.4s grace so a
 			-- ball-leave mid-dribble doesn't drop the lock; on a real dead ball we
@@ -3653,7 +3715,7 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			if oppHas then F.Farm._oppBallAt = os.clock() end
 			if oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4 then
 				F.Guard.mode = "Teleport"
-				F.Guard.dist = 2.5
+				F.Guard.dist = 1.5
 				F.Guard.enabled = true
 				farmSteal()
 			else
@@ -3699,17 +3761,14 @@ end)
 farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(on)
 	F.Farm.enabled = on
 	if on then
-		F.Green.enabled = true                 -- so the shot key drives rage + green
-		F.Green.mode = "Legit"                 -- macro shots (timed key hold), not meter tampering
-		F.Green.macroMs = 341                  -- the tuned perfect-hold time
-		F.Green.rage = true                    -- shoot uncontested
-		F.Green.rageMode = "3PT Teleport"      -- 3-point rage green
-		F.Green.rageRadius = 42                -- deeper 3s: farther from the defender AND past the takeback line
-		F.Green.rageHold = 3                   -- don't auto-return to origin mid-shot
-		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
+		F.Green.enabled = true                 -- so a manual shot still greens too
+		F.Green.mode = "Legit"                 -- farmShoot fires the timed macro (no meter tampering)
+		F.Green.macroMs = 341                  -- perfect-hold time (tune here if greens miss)
 		F.Guard.maxRange = 80                  -- court-sized: locks the opponent, not players on other courts
-		F.Guard.dist = 2.5                     -- guard right on the ball carrier
+		F.Guard.dist = 1.5                     -- guard right on the ball carrier
 		F.Guard.forceTarget = nil
+		-- (the farm positions its own shots via farmShotSpot -- it does NOT use the
+		-- rage teleport, so rage settings are left as the user has them)
 		farmSetState("seek")
 		Library:Notify("Auto Farm", "Farming. Only acts while on a court in a live match -- watch the console.", 6, "good")
 	else
