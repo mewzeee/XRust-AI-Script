@@ -3517,25 +3517,35 @@ local function courtHoop(court)
 	return myc and nearestHoop(myc.HumanoidRootPart.Position) or nil
 end
 
--- a LOOSE ball that is actually inside MY court (not a ball 500 studs away on
--- another court -- that was the "teleported me to a ball 500m away" bug)
+-- The live loose ball: a direct child of Workspace named Basketball/Ball (a shot
+-- or dropped ball becomes one). NOT the held ball (nested in a character) and NOT
+-- a rack spare. This scans directly instead of findBall(), which CACHES the last
+-- ball and returns your HELD one first -- that's the core reason rebound never
+-- fired. Constrained to my court so it won't chase one 500 studs away.
 local function farmLooseBall(court)
-	if not (court and ballIsLoose()) then return nil end   -- someone is holding it
-	local ball = findBall()
-	if not ball or isRacked(ball) then return nil end
-	local ok, ccf, csize = pcall(function() return court:GetBoundingBox() end)
-	if not ok then return nil end
-	local rel = ccf:PointToObjectSpace(ball.Position)
-	if math.abs(rel.X) > csize.X / 2 + 5 or math.abs(rel.Z) > csize.Z / 2 + 5 then return nil end
-	return ball
+	for _, d in ipairs(Workspace:GetChildren()) do
+		if isBall(d) and not isRacked(d) then
+			if not court then return d end
+			local ok, ccf, csize = pcall(function() return court:GetBoundingBox() end)
+			if not ok then return d end
+			local rel = ccf:PointToObjectSpace(d.Position)
+			if math.abs(rel.X) <= csize.X / 2 + 12 and math.abs(rel.Z) <= csize.Z / 2 + 12 then
+				return d
+			end
+		end
+	end
+	return nil
 end
 
--- teleport straight onto a specific loose ball to grab it (facing it)
+-- teleport ONTO the loose ball (overlap it so the touch-pickup fires), facing
+-- the hoop so we're ready to shoot the instant we grab it
 local function farmGrabBall(ball)
 	local myc = getChar()
 	if not (myc and ball) then return end
 	local hrp = myc.HumanoidRootPart
-	hrp.CFrame = CFrame.new(ball.Position + Vector3.new(0, 1, 0), ball.Position)
+	local hoop = nearestHoop(ball.Position)
+	local look = hoop and Vector3.new(hoop.X, ball.Position.Y, hoop.Z) or (ball.Position + hrp.CFrame.LookVector)
+	hrp.CFrame = CFrame.new(ball.Position, look)
 	hrp.AssemblyLinearVelocity = Vector3.zero
 end
 
@@ -3563,7 +3573,7 @@ local function farmShotSpot(court, opp)
 		local gz = -halfZ
 		while gz <= halfZ do
 			local dHoop = math.sqrt((gx - hLocal.X) ^ 2 + (gz - hLocal.Z) ^ 2)
-			if dHoop >= 28 and dHoop <= 36 then      -- comfortable 3: past the takeback line, not a deep heave
+			if dHoop >= 37 and dHoop <= 46 then      -- true 3 (28-36 was just inside the arc), not a deep heave
 				local score = oppLocal and math.sqrt((gx - oppLocal.X) ^ 2 + (gz - oppLocal.Z) ^ 2) or -dHoop
 				if score > bestScore then
 					bestScore = score
@@ -3582,12 +3592,12 @@ end
 local STEAL_KEY = Enum.KeyCode.R
 local function farmSteal()
 	if not VIM then return end
-	if os.clock() - (F.Farm._lastSteal or 0) < 0.12 then return end
+	if os.clock() - (F.Farm._lastSteal or 0) < 0.06 then return end
 	F.Farm._lastSteal = os.clock()
 	task.spawn(function()
 		pcall(function()
 			VIM:SendKeyEvent(true, STEAL_KEY, false, game)
-			task.wait(0.03)
+			task.wait(0.02)
 			VIM:SendKeyEvent(false, STEAL_KEY, false, game)
 		end)
 	end)
@@ -3726,7 +3736,8 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			if oppHas then F.Farm._oppBallAt = os.clock() end
 			if oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4 then
 				F.Guard.mode = "Teleport"
-				F.Guard.dist = 1.5
+				F.Guard.dist = 1        -- right on top of the carrier so R can steal
+				F.Guard.faceTarget = true
 				F.Guard.enabled = true
 				farmSteal()
 			else
@@ -3776,7 +3787,7 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 		F.Green.mode = "Legit"                 -- farmShoot fires the timed macro (no meter tampering)
 		F.Green.macroMs = 341                  -- perfect-hold time (tune here if greens miss)
 		F.Guard.maxRange = 80                  -- court-sized: locks the opponent, not players on other courts
-		F.Guard.dist = 1.5                     -- guard right on the ball carrier
+		F.Guard.dist = 1                       -- right on the ball carrier so R can steal
 		F.Guard.forceTarget = nil
 		-- (the farm positions its own shots via farmShotSpot -- it does NOT use the
 		-- rage teleport, so rage settings are left as the user has them)
