@@ -3088,7 +3088,12 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 	local key = opt and opt.GetKey and opt:GetKey()
 	if key and not isDown(key) then return end   -- bound: hold it. unbound: always on.
 
-	local target = guardTarget()
+	-- forceTarget lets the farm pin guarding to the opponent on MY court, so it
+	-- can't wander onto a nearer player standing on another court. Manual guard
+	-- leaves it nil and picks the nearest as before.
+	local ft = F.Guard.forceTarget
+	local ftValid = ft and ft.Character and ft.Character:FindFirstChild("HumanoidRootPart")
+	local target = (ftValid and ft) or guardTarget()
 	F.Guard.target = target
 	-- while farming, log target acquire/lose so "guard isn't doing anything" is
 	-- answerable (no new local, no spam: fires only on change, only when farming)
@@ -3468,30 +3473,102 @@ local function farmFaceHoop()
 	if hoop then hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(hoop.X, hrp.Position.Y, hoop.Z)) end
 end
 
+-- the opponent on MY court: nearest other player whose torso is inside the court
+-- box. Used as the guard's forced target so it can't lock onto someone standing
+-- on a different court.
+local function farmOpponent(court)
+	local myc = getChar()
+	if not (court and myc) then return nil end
+	local ok, ccf, csize = pcall(function() return court:GetBoundingBox() end)
+	if not ok then return nil end
+	local myPos = myc.HumanoidRootPart.Position
+	local best, bestD = nil, math.huge
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local rel = ccf:PointToObjectSpace(hrp.Position)
+				if math.abs(rel.X) <= csize.X / 2 and math.abs(rel.Z) <= csize.Z / 2 then
+					local d = (hrp.Position - myPos).Magnitude
+					if d < bestD then best, bestD = p, d end
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- teleport straight onto the loose ball to grab it (the rebound loop kept losing
+-- the 50/50; a direct spam-teleport wins it)
+local function farmGrabBall()
+	local myc = getChar()
+	if not myc then return end
+	local ball = findBall()
+	if not ball or isRacked(ball) then return end
+	local hrp = myc.HumanoidRootPart
+	hrp.CFrame = CFrame.new(ball.Position + Vector3.new(0, 1, 0))
+	hrp.AssemblyLinearVelocity = Vector3.zero
+end
+
+-- spam the steal key (R) while guarding the ball carrier
+local STEAL_KEY = Enum.KeyCode.R
+local function farmSteal()
+	if not VIM then return end
+	if os.clock() - (F.Farm._lastSteal or 0) < 0.12 then return end
+	F.Farm._lastSteal = os.clock()
+	task.spawn(function()
+		pcall(function()
+			VIM:SendKeyEvent(true, STEAL_KEY, false, game)
+			task.wait(0.03)
+			VIM:SendKeyEvent(false, STEAL_KEY, false, game)
+		end)
+	end)
+end
+
+-- after a match, step off the court so we're not standing in the finished game
+local function farmLeaveCourt(court)
+	local myc = getChar()
+	if not (court and myc) then return end
+	local spots = courtQueueSpots(court)
+	local dest = spots[1]   -- a queue pad is off the playing floor
+	if not dest then
+		local ok, cf, size = pcall(function() return court:GetBoundingBox() end)
+		if ok then dest = cf.Position + Vector3.new(size.X / 2 + 8, 0, 0) end
+	end
+	if dest then
+		local hrp = myc.HumanoidRootPart
+		hrp.CFrame = CFrame.new(dest.X, hrp.Position.Y, dest.Z)
+		hrp.AssemblyLinearVelocity = Vector3.zero
+	end
+end
+
 -- shoot through the REAL green path: press the shoot key so the game's own shot
 -- fires and the Auto Green handler (rage + green) rides along. Legit uses its
 -- tuned hold; Blatant needs a longer hold so the meter loop can lock first.
 local function farmShoot()
+	if F.Farm._shooting then return end   -- one shot sequence at a time
 	if os.clock() - F.Farm.lastShot < F.Farm.shootEvery then return end
-	F.Farm.lastShot = os.clock()
-	-- 1) position: 3PT rage teleport (fall back to drop) so the shot is a clean,
-	--    uncontested three, ending up facing the hoop
-	if F.Green.rage then
-		if F.Green.rageMode == "3PT Teleport" then
-			local ok, moved = pcall(rageTeleport)
-			if not ok or moved == false then pcall(rageDrop) end
-		else
-			pcall(rageDrop)
-		end
-	else
-		farmFaceHoop()
-	end
-	-- 2) shoot: press the key, release after the tuned hold -- this IS the legit
-	--    macro (no meter tampering). _shooting makes our own InputBegan handler
-	--    ignore this synthetic key so it doesn't re-fire rage or double up.
 	if not VIM then return end
+	F.Farm.lastShot = os.clock()
 	F.Farm._shooting = true
 	task.spawn(function()
+		-- 1) TAKE BACK: rage-teleport out past the 3PT / takeback line, then WAIT
+		--    so the game registers us behind it. Shooting straight after a rebound
+		--    or steal without going back is a take-back violation -- the pause and
+		--    the deeper rage spot (bigger radius, set on enable) are what make it
+		--    count.
+		if F.Green.rage then
+			if F.Green.rageMode == "3PT Teleport" then
+				local ok, moved = pcall(rageTeleport)
+				if not ok or moved == false then pcall(rageDrop) end
+			else
+				pcall(rageDrop)
+			end
+		end
+		task.wait(0.35)          -- let the takeback register
+		farmFaceHoop()
+		-- 2) shoot: press the key, release after the tuned hold -- the legit macro.
+		--    _shooting makes our own InputBegan handler ignore this synthetic key.
 		local k = F.Green.key
 		local hold = (F.Green.mode == "Legit") and (math.clamp(F.Green.macroMs, 5, 1200) / 1000) or 0.45
 		pcall(function()
@@ -3551,43 +3628,53 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 	local inMatch, court = farmInMatch()
 	if inMatch then
 		F.Farm.lastInMatch = os.clock()
+		F.Farm._playCourt = court
 		farmSetState("play")
-		-- possession decides the behaviour, toggling the tuned guard/rebound loops
+		-- lock the guard to the opponent on THIS court (not a nearer player on
+		-- another court), and never chase a loose ball with the rebound loop --
+		-- the farm grabs it directly below.
+		F.Guard.forceTarget = farmOpponent(court)
+		F.Reb.enabled = false
+
 		if ballHeld() then
-			-- I have it: shoot (3PT rage + legit macro ride along via the shoot key)
-			F.Guard.enabled, F.Reb.enabled = false, false
+			-- I have it: shoot (take-back rage 3 + legit macro)
+			F.Guard.enabled = false
 			farmShoot()
-		elseif looseBallOnCourt(court) then
-			-- loose on the court: snap to it. Teleport mode + no cooldown so it's
-			-- instant (the 0.4s rebound cooldown was why it lost 50/50 balls).
-			F.Reb.mode = "Teleport"
-			F.Reb.enabled, F.Guard.enabled = true, false
+		elseif ballIsLoose() then
+			-- nobody is holding it -> spam-teleport onto it to grab (don't chase my
+			-- own shot while the shot sequence is still running)
+			F.Guard.enabled = false
+			if not F.Farm._shooting then farmGrabBall() end
 		else
-			-- GUARD only while the opponent actually HOLDS the ball. Guarding
-			-- whenever I simply lacked the ball meant it locked on during dead
-			-- balls too (the "auto guarding them even when they don't have it").
-			-- A 0.4s grace bridges a brief ball-leave mid-dribble so it doesn't
-			-- flicker off. Teleport mode: the game overrides Humanoid walking.
+			-- the opponent has it: guard CLOSE and spam R to steal. 0.4s grace so a
+			-- ball-leave mid-dribble doesn't drop the lock; on a real dead ball we
+			-- stop instead of chasing them around.
 			local oppHas = opponentHasBall(court)
 			if oppHas then F.Farm._oppBallAt = os.clock() end
 			if oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4 then
 				F.Guard.mode = "Teleport"
-				F.Guard.enabled, F.Reb.enabled = true, false
+				F.Guard.dist = 2.5
+				F.Guard.enabled = true
+				farmSteal()
 			else
-				F.Guard.enabled, F.Reb.enabled = false, false  -- dead ball: wait
+				F.Guard.enabled = false
 			end
 		end
 		return
 	end
 
-	-- out of a match: stop the sub-behaviours so they don't drag us around
+	-- out of a match: stop the sub-behaviours and drop the guard lock so they
+	-- don't drag us around
 	F.Guard.enabled, F.Reb.enabled = false, false
+	F.Guard.forceTarget = nil
 
 	if F.Farm.state == "play" then
-		-- we were playing and the match signal is gone -> count it and move on
+		-- we were playing and the match signal is gone -> count it, step off the
+		-- finished court, and move on
 		if os.clock() - F.Farm.lastInMatch > F.Farm.idleReturn then
 			F.Farm.wins = F.Farm.wins + 1
-			farmLog("match over (#" .. F.Farm.wins .. ") -> seeking next")
+			farmLog("match over (#" .. F.Farm.wins .. ") -> leaving court, seeking next")
+			pcall(farmLeaveCourt, F.Farm._playCourt)
 			farmCourt = nil
 			farmSetState("seek")
 		end
@@ -3617,15 +3704,17 @@ farmP:AddToggle({ Text = "Enabled", Flag = "farm_enabled", Callback = function(o
 		F.Green.macroMs = 341                  -- the tuned perfect-hold time
 		F.Green.rage = true                    -- shoot uncontested
 		F.Green.rageMode = "3PT Teleport"      -- 3-point rage green
+		F.Green.rageRadius = 42                -- deeper 3s: farther from the defender AND past the takeback line
+		F.Green.rageHold = 3                   -- don't auto-return to origin mid-shot
 		F.Reb.onlyLoose = true                 -- only chase a genuinely loose ball
-		F.Reb.cooldown = 0.05                  -- near-instant rebound snap (was 0.4)
-		F.Reb.range = 200                      -- grab the ball from anywhere on court
-		F.Reb.height = 2                       -- land ON the ball, not below it
 		F.Guard.maxRange = 80                  -- court-sized: locks the opponent, not players on other courts
+		F.Guard.dist = 2.5                     -- guard right on the ball carrier
+		F.Guard.forceTarget = nil
 		farmSetState("seek")
 		Library:Notify("Auto Farm", "Farming. Only acts while on a court in a live match -- watch the console.", 6, "good")
 	else
 		F.Guard.enabled, F.Reb.enabled = false, false
+		F.Guard.forceTarget = nil
 		local h = getHumanoid(); if h then h:Move(Vector3.zero, false) end
 		farmSetState("idle")
 	end
