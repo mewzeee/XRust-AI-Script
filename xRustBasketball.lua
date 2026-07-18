@@ -3641,16 +3641,30 @@ local function farmShoot(court, opp)
 		local myc = getChar()
 		local hoop = courtHoop(court)
 		local spot = myc and farmShotSpot(court, opp)
-		-- 1) TAKE BACK: teleport to the shot spot (inside the court, past the arc)
-		--    and WAIT so crossing behind the line registers. Shooting straight
-		--    after a rebound/steal without going back is a take-back violation.
+		-- 1) TAKE BACK by GLIDING out to the shot spot, not teleporting. The clear
+		--    is a CROSSING event -- you have to physically carry the ball across
+		--    the takeback line. A teleport lands you behind it but never triggers
+		--    the clear, so every rebound shot was a violation. Stepping across it
+		--    in small hops (with a bit of velocity) fires the line's trigger.
 		if myc and spot then
-			local hrp = myc.HumanoidRootPart
-			local face = hoop and Vector3.new(hoop.X, spot.Y, hoop.Z) or (spot + hrp.CFrame.LookVector)
-			hrp.CFrame = CFrame.new(spot, face)
-			hrp.AssemblyLinearVelocity = Vector3.zero
+			local t0 = os.clock()
+			while os.clock() - t0 < 1.6 do
+				local c = getChar()
+				if not (c and c.Parent) then break end
+				local hrp = c.HumanoidRootPart
+				local flat = Vector3.new(spot.X - hrp.Position.X, 0, spot.Z - hrp.Position.Z)
+				if flat.Magnitude <= 2 then break end
+				local step = math.min(flat.Magnitude, 4)
+				local nextPos = hrp.Position + flat.Unit * step
+				local look = hoop and Vector3.new(hoop.X, nextPos.Y, hoop.Z) or (nextPos + flat.Unit)
+				hrp.CFrame = CFrame.new(nextPos, look)
+				hrp.AssemblyLinearVelocity = flat.Unit * 8   -- keep some velocity so the takeback trigger fires
+				task.wait()
+			end
+			local cEnd = getChar()
+			if cEnd then cEnd.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero end
 		end
-		task.wait(0.35)          -- let the takeback register
+		task.wait(0.3)           -- settle behind the line so the clear registers
 		-- re-face the hoop right before releasing so the shot travels at it
 		if myc and myc.Parent and hoop then
 			local hrp = myc.HumanoidRootPart
