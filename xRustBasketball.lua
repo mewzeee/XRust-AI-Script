@@ -3088,12 +3088,18 @@ Library:StartLoop("guard", RunService.RenderStepped, function(dt)
 	local key = opt and opt.GetKey and opt:GetKey()
 	if key and not isDown(key) then return end   -- bound: hold it. unbound: always on.
 
-	-- forceTarget lets the farm pin guarding to the opponent on MY court, so it
-	-- can't wander onto a nearer player standing on another court. Manual guard
-	-- leaves it nil and picks the nearest as before.
+	-- forceTarget lets the farm pin guarding to the opponent on MY court. While
+	-- farming we NEVER fall back to guardTarget() -- that fallback is what
+	-- teleported the character onto a player 80 studs away on ANOTHER court (the
+	-- "randomly teleported out of the map"). Manual guard still picks the nearest.
 	local ft = F.Guard.forceTarget
 	local ftValid = ft and ft.Character and ft.Character:FindFirstChild("HumanoidRootPart")
-	local target = (ftValid and ft) or guardTarget()
+	local target
+	if F.Farm and F.Farm.enabled then
+		target = ftValid and ft or nil            -- forced on-court target only
+	else
+		target = (ftValid and ft) or guardTarget()
+	end
 	F.Guard.target = target
 	-- while farming, log target acquire/lose so "guard isn't doing anything" is
 	-- answerable (no new local, no spam: fires only on change, only when farming)
@@ -3732,19 +3738,22 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 	if not F.Farm.enabled or Library.Destroyed then return end
 	if not getChar() then return end
 
-	-- RECOVERY NET: if some teleport (or a fall) put us far off the court we were
-	-- playing on, snap back to its centre instead of being stuck off the map.
-	-- Only fires on the extreme case, so it won't fight the legit end-of-match
-	-- teleport to a pad (~50 studs). This is the "teleports me out" safety.
+	-- RECOVERY NET: if a stray teleport or a fall puts us off the court we're
+	-- playing on, snap back INSTANTLY (same frame) to our last good on-court spot.
+	-- Tight threshold + immediate so the off-map window is one frame, not the
+	-- second that just cost a 40-game streak. The far-guard cause is fixed above;
+	-- this is the belt-and-suspenders. Only in play, so it won't fight the
+	-- end-of-match pad walk (that's in seek/queue).
 	if F.Farm.state == "play" and F.Farm._playCourt then
 		local fCf, fSize = courtFloorBox(F.Farm._playCourt)
 		local myc0 = getChar()
 		if fCf and fSize and myc0 then
 			local rel = fCf:PointToObjectSpace(myc0.HumanoidRootPart.Position)
-			if math.abs(rel.X) > fSize.X / 2 + 120 or math.abs(rel.Z) > fSize.Z / 2 + 120
-				or rel.Y < -50 or rel.Y > 120 then
-				farmLog(("recovered off-map (rel %.0f,%.0f,%.0f) -> court centre"):format(rel.X, rel.Y, rel.Z))
-				myc0.HumanoidRootPart.CFrame = CFrame.new(fCf.Position + Vector3.new(0, 4, 0))
+			if math.abs(rel.X) > fSize.X / 2 + 30 or math.abs(rel.Z) > fSize.Z / 2 + 30
+				or rel.Y < -15 or rel.Y > 40 then
+				local dest = F.Farm._lastGood or (fCf.Position + Vector3.new(0, 4, 0))
+				farmLog(("recovered off court (rel %.0f,%.0f,%.0f) -> last good"):format(rel.X, rel.Y, rel.Z))
+				myc0.HumanoidRootPart.CFrame = CFrame.new(dest + Vector3.new(0, 3, 0))
 				myc0.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
 			end
 		end
@@ -3761,6 +3770,7 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 		local opp = farmOpponent(court)
 		F.Guard.forceTarget = opp
 		F.Reb.enabled = false
+		F.Farm._lastGood = myc and myc.HumanoidRootPart.Position   -- on-court, for recovery
 		local loose = farmLooseBall(court)   -- a ball loose on MY court (not 500m away)
 
 		if ballHeld() then
@@ -3779,9 +3789,12 @@ Library:StartLoop("farm", RunService.Heartbeat, function()
 			-- the opponent has it: guard CLOSE and spam R to steal. 0.4s grace so a
 			-- ball-leave mid-dribble doesn't drop the lock; on a real dead ball we
 			-- stop instead of chasing them around.
-			local oppHas = opponentHasBall(court)
+			-- ONLY guard if there is an opponent on MY court (opp). Without this,
+			-- when they briefly weren't detected the guard fell through and flung us
+			-- onto a player on another court -- the "randomly teleported off map".
+			local oppHas = opp and opponentHasBall(court)
 			if oppHas then F.Farm._oppBallAt = os.clock() end
-			if oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4 then
+			if opp and (oppHas or os.clock() - (F.Farm._oppBallAt or 0) < 0.4) then
 				F.Guard.mode = "Teleport"
 				F.Guard.dist = 1        -- right on top of the carrier so R can steal
 				F.Guard.faceTarget = true
